@@ -1,4 +1,4 @@
-// routes/admin.js - ENHANCED Admin Panel with Request System
+// routes/admin.js - COMPLETE with ALL Webhooks
 const express = require('express');
 const router = express.Router();
 const { generateDashboard, generateRequestManagementPage } = require('../views/dashboard');
@@ -149,7 +149,14 @@ router.post('/approve-reset-request', async (req, res) => {
       ]);
       
       await logActivityBatched('RESET_REQUEST_APPROVED', `Request: ${requestId}, License: ${license}`, req.ip, req.get('User-Agent'));
-      await sendWebhook('reset_approved', { license, requestId });
+      
+      // Webhook: Reset Request Approved
+      await sendWebhook('reset_approved', { 
+        license, 
+        requestId,
+        approvedBy: req.session.user,
+        deviceName: lic.deviceName || 'Unknown'
+      });
     }
     
     res.redirect('/admin/reset-requests');
@@ -164,6 +171,9 @@ router.post('/deny-reset-request', async (req, res) => {
     const { requestId, reason } = req.body;
     
     const db = getDb();
+    const requestDoc = await db.collection('reset_requests').doc(requestId).get();
+    const requestData = requestDoc.data();
+    
     await db.collection('reset_requests').doc(requestId).update({
       status: 'denied',
       processedAt: new Date().toISOString(),
@@ -172,6 +182,14 @@ router.post('/deny-reset-request', async (req, res) => {
     });
     
     await logActivityBatched('RESET_REQUEST_DENIED', `Request: ${requestId}`, req.ip, req.get('User-Agent'));
+    
+    // Webhook: Reset Request Denied
+    await sendWebhook('reset_denied', {
+      license: requestData.license,
+      requestId,
+      deniedBy: req.session.user,
+      reason: sanitizeInput(reason) || 'No reason provided'
+    });
     
     res.redirect('/admin/reset-requests');
   } catch (error) {
@@ -211,7 +229,14 @@ router.post('/generate-license', async (req, res) => {
     
     await saveLicense(license, licenseData);
     await logActivityBatched('LICENSE_GENERATED', `License: ${license}`, req.ip, req.get('User-Agent'));
-    await sendWebhook('license_generated', { license, expiry: expiry || 'Never' });
+    
+    // Webhook: License Generated
+    await sendWebhook('license_generated', { 
+      license, 
+      expiry: expiry ? new Date(expiry).toLocaleDateString() : 'Never',
+      createdBy: req.session.user,
+      type: 'Standard'
+    });
     
     res.redirect('/admin');
   } catch (error) {
@@ -256,6 +281,15 @@ router.post('/bulk-generate', async (req, res) => {
     
     await logActivityBatched('BULK_GENERATE', `Generated ${count} licenses`, req.ip, req.get('User-Agent'));
     
+    // Webhook: Bulk Licenses Generated
+    await sendWebhook('bulk_licenses_generated', {
+      count,
+      prefix,
+      expiry: expiry ? new Date(expiry).toLocaleDateString() : 'Never',
+      batchId,
+      createdBy: req.session.user
+    });
+    
     const licensesText = licenses.join('\n');
     res.setHeader('Content-Type', 'text/plain');
     res.setHeader('Content-Disposition', `attachment; filename="licenses_${batchId}.txt"`);
@@ -284,6 +318,14 @@ router.post('/delete-license', async (req, res) => {
     
     await logActivityBatched('LICENSE_DELETED', `License: ${license}`, req.ip, req.get('User-Agent'));
     
+    // Webhook: License Deleted
+    await sendWebhook('license_deleted', {
+      license,
+      deletedBy: req.session.user,
+      wasActivated: !!lic?.hwid,
+      deviceName: lic?.deviceName || 'Not activated'
+    });
+    
     res.redirect('/admin');
   } catch (error) {
     console.error('Delete error:', error);
@@ -298,6 +340,7 @@ router.post('/reset-hwid', async (req, res) => {
     
     if (lic && lic.hwid) {
       const oldHwid = lic.hwid;
+      const oldDeviceName = lic.deviceName;
       
       const updatedLic = {
         ...lic,
@@ -318,6 +361,13 @@ router.post('/reset-hwid', async (req, res) => {
       ]);
       
       await logActivityBatched('HWID_RESET', `License: ${license}`, req.ip, req.get('User-Agent'));
+      
+      // Webhook: HWID Reset by Admin
+      await sendWebhook('hwid_reset', {
+        license,
+        previousDevice: oldDeviceName || 'Unknown',
+        resetBy: req.session.user
+      });
     }
     
     res.redirect('/admin');
@@ -344,6 +394,13 @@ router.post('/add-license-note', async (req, res) => {
       
       await saveLicenseAndInvalidateCache(license, updatedLic);
       await logActivityBatched('LICENSE_NOTE_ADDED', `License: ${license}`, req.ip, req.get('User-Agent'));
+      
+      // Webhook: Note Added (optional, can be removed if too spammy)
+      // await sendWebhook('license_note_added', {
+      //   license,
+      //   note: sanitizeInput(note).substring(0, 100),
+      //   addedBy: req.session.user
+      // });
     }
     
     res.redirect('/admin');
@@ -381,6 +438,16 @@ router.post('/ban-license', async (req, res) => {
       
       await saveLicenseAndInvalidateCache(license, updatedLic);
       await logActivityBatched('LICENSE_BANNED', `License: ${license}, Duration: ${duration || 'permanent'} days`, req.ip, req.get('User-Agent'));
+      
+      // Webhook: License Banned
+      await sendWebhook('license_banned', {
+        license,
+        reason: sanitizeInput(reason) || 'No reason',
+        duration: duration ? `${duration} days` : 'Permanent',
+        banUntil: banUntil ? new Date(banUntil).toLocaleDateString() : 'Permanent',
+        bannedBy: req.session.user,
+        deviceName: lic.deviceName || 'Not activated'
+      });
     }
     
     res.redirect('/admin');
@@ -396,6 +463,8 @@ router.post('/unban-license', async (req, res) => {
     
     const lic = await getLicense(license);
     if (lic) {
+      const previousBanReason = lic.banReason;
+      
       const updatedLic = {
         ...lic,
         banned: false,
@@ -412,6 +481,13 @@ router.post('/unban-license', async (req, res) => {
       
       await saveLicenseAndInvalidateCache(license, updatedLic);
       await logActivityBatched('LICENSE_UNBANNED', `License: ${license}`, req.ip, req.get('User-Agent'));
+      
+      // Webhook: License Unbanned
+      await sendWebhook('license_unbanned', {
+        license,
+        previousBanReason: previousBanReason || 'Unknown',
+        unbannedBy: req.session.user
+      });
     }
     
     res.redirect('/admin');
@@ -441,6 +517,12 @@ router.post('/update-settings', async (req, res) => {
     
     await logActivityBatched('SETTINGS_UPDATED', JSON.stringify(settings), req.ip, req.get('User-Agent'));
     
+    // Webhook: Settings Updated
+    await sendWebhook('settings_updated', {
+      apiEnabled: settings.apiEnabled ? 'Enabled' : 'Disabled',
+      updatedBy: req.session.user
+    });
+    
     res.redirect('/admin');
   } catch (error) {
     console.error('Settings error:', error);
@@ -461,7 +543,13 @@ router.post('/ban-hwid', async (req, res) => {
       cache.clearAllCaches();
       
       await logActivityBatched('HWID_BANNED', `HWID: ${hwid}`, req.ip, req.get('User-Agent'));
-      await sendWebhook('hwid_banned', { hwid: hwid.substring(0, 16) + '...', reason });
+      
+      // Webhook: HWID Banned
+      await sendWebhook('hwid_banned', { 
+        hwid: hwid.substring(0, 20) + '...', 
+        reason: sanitizeInput(reason) || 'No reason',
+        bannedBy: req.session.user
+      });
     }
     
     res.redirect('/admin');
@@ -479,6 +567,12 @@ router.post('/unban-hwid', async (req, res) => {
     
     await logActivityBatched('HWID_UNBANNED', `HWID: ${hwid}`, req.ip, req.get('User-Agent'));
     
+    // Webhook: HWID Unbanned
+    await sendWebhook('hwid_unbanned', {
+      hwid: hwid.substring(0, 20) + '...',
+      unbannedBy: req.session.user
+    });
+    
     res.redirect('/admin');
   } catch (error) {
     console.error('Unban error:', error);
@@ -492,6 +586,13 @@ router.post('/unban-hwid', async (req, res) => {
 
 router.post('/clear-cache', (req, res) => {
   cache.clearAllCaches();
+  
+  // Webhook: Cache Cleared
+  sendWebhook('cache_cleared', {
+    clearedBy: req.session.user,
+    timestamp: new Date().toISOString()
+  });
+  
   res.redirect('/admin');
 });
 
@@ -514,6 +615,13 @@ router.post('/clear-logs', async (req, res) => {
     await batch.commit();
     
     await logActivityBatched('LOGS_CLEARED', `Cleared ${logsSnapshot.size} logs`, req.ip, req.get('User-Agent'));
+    
+    // Webhook: Logs Cleared
+    await sendWebhook('logs_cleared', {
+      logsCleared: logsSnapshot.size,
+      olderThan: `${days} days`,
+      clearedBy: req.session.user
+    });
     
     res.redirect('/admin');
   } catch (error) {

@@ -1,4 +1,4 @@
-// routes/api.js - COMPLETE ENHANCED API with Request System
+// routes/api.js - COMPLETE ENHANCED API with ALL Webhooks
 const express = require('express');
 const router = express.Router();
 
@@ -60,6 +60,13 @@ router.post('/register', async (req, res) => {
     
     const banlist = await getBanlistCached();
     if (banlist.includes(hwid)) {
+      // Webhook: HWID Ban Attempt
+      await sendWebhook('hwid_ban_attempt', {
+        license,
+        hwid: hwid.substring(0, 20) + '...',
+        ip: req.ip
+      });
+      
       return res.status(403).json({
         success: false,
         code: 'BANNED',
@@ -75,6 +82,14 @@ router.post('/register', async (req, res) => {
         `HWID tried ${license}, registered to ${existingLicense}`, 
         req.ip, req.get('User-Agent'), null, 'high');
       
+      // Webhook: HWID Conflict
+      await sendWebhook('hwid_conflict', {
+        attemptedLicense: license,
+        registeredTo: existingLicense,
+        hwid: hwid.substring(0, 20) + '...',
+        ip: req.ip
+      });
+      
       return res.status(409).json({
         success: false,
         code: 'HWID_ALREADY_REGISTERED',
@@ -86,6 +101,13 @@ router.post('/register', async (req, res) => {
     const lic = await getLicenseCached(license);
     
     if (!lic) {
+      // Webhook: Invalid License Attempt
+      await sendWebhook('invalid_license_attempt', {
+        license,
+        hwid: hwid.substring(0, 20) + '...',
+        ip: req.ip
+      });
+      
       return res.status(404).json({
         success: false,
         code: 'INVALID_LICENSE',
@@ -99,6 +121,15 @@ router.post('/register', async (req, res) => {
       const banMessage = lic.banUntil ? 
         `License banned until ${new Date(lic.banUntil).toLocaleDateString()}` : 
         'License permanently banned';
+      
+      // Webhook: Banned License Attempt
+      await sendWebhook('license_ban_attempt', {
+        license,
+        banReason: lic.banReason || 'No reason',
+        banUntil: lic.banUntil || 'Permanent',
+        hwid: hwid.substring(0, 20) + '...',
+        ip: req.ip
+      });
       
       return res.status(403).json({
         success: false,
@@ -114,6 +145,14 @@ router.post('/register', async (req, res) => {
     }
     
     if (isLicenseExpired(lic)) {
+      // Webhook: Expired License Attempt
+      await sendWebhook('expired_license_attempt', {
+        license,
+        expiry: lic.expiry,
+        hwid: hwid.substring(0, 20) + '...',
+        ip: req.ip
+      });
+      
       return res.status(410).json({
         success: false,
         code: 'EXPIRED',
@@ -123,6 +162,15 @@ router.post('/register', async (req, res) => {
     }
     
     if (lic.hwid && lic.hwid !== hwid) {
+      // Webhook: Activation Conflict
+      await sendWebhook('activation_conflict', {
+        license,
+        registeredDevice: lic.deviceName || 'Unknown',
+        registeredHwid: lic.hwid.substring(0, 20) + '...',
+        attemptingHwid: hwid.substring(0, 20) + '...',
+        ip: req.ip
+      });
+      
       return res.status(409).json({
         success: false,
         code: 'LICENSE_ALREADY_ACTIVATED',
@@ -171,7 +219,14 @@ router.post('/register', async (req, res) => {
     
     markAsRecentlyValidated(license, hwid);
     
-    await sendWebhook('device_registered', { license, deviceName: updatedLic.deviceName });
+    // Webhook: Device Successfully Registered
+    await sendWebhook('device_registered', { 
+      license, 
+      deviceName: updatedLic.deviceName,
+      deviceInfo: updatedLic.deviceInfo,
+      expiry: updatedLic.expiry || 'Never',
+      ip: req.ip
+    });
     
     return res.status(201).json({
       success: true,
@@ -188,6 +243,14 @@ router.post('/register', async (req, res) => {
     
   } catch (error) {
     console.error('Registration error:', error);
+    
+    // Webhook: Server Error
+    await sendWebhook('api_error', {
+      endpoint: '/api/register',
+      error: error.message,
+      license: req.body.license || 'N/A'
+    });
+    
     return res.status(500).json({
       success: false,
       code: 'SERVER_ERROR',
@@ -251,6 +314,13 @@ router.get('/validate', async (req, res) => {
     
     const banlist = await getBanlistCached();
     if (banlist.includes(hwid)) {
+      // Webhook: Banned HWID Validation Attempt
+      await sendWebhook('banned_hwid_validation', {
+        license,
+        hwid: hwid.substring(0, 20) + '...',
+        ip: req.ip
+      });
+      
       return res.status(403).json({
         success: false,
         code: 'BANNED',
@@ -288,7 +358,23 @@ router.get('/validate', async (req, res) => {
           }]
         };
         await saveLicenseAndInvalidateCache(license, updatedLic);
+        
+        // Webhook: Auto Unban
+        await sendWebhook('license_auto_unbanned', {
+          license,
+          previousBanReason: lic.banReason,
+          bannedUntil: lic.banUntil
+        });
       } else {
+        // Webhook: Banned License Validation Attempt
+        await sendWebhook('banned_license_validation', {
+          license,
+          banReason: lic.banReason || 'No reason',
+          banUntil: lic.banUntil || 'Permanent',
+          hwid: hwid.substring(0, 20) + '...',
+          ip: req.ip
+        });
+        
         return res.status(403).json({
           success: false,
           code: 'LICENSE_BANNED',
@@ -314,6 +400,16 @@ router.get('/validate', async (req, res) => {
     if (lic.hwid === hwid) {
       markAsRecentlyValidated(license, hwid);
       
+      // Webhook: Successful Validation (only 0.5% chance to avoid spam)
+      if (Math.random() < 0.005) {
+        await sendWebhook('license_validated', {
+          license,
+          deviceName: lic.deviceName,
+          daysRemaining: calculateDaysUntilExpiry(lic.expiry) || 'Unlimited',
+          note: 'Sample validation (0.5% reported)'
+        });
+      }
+      
       return res.json({
         success: true,
         code: 'VALID',
@@ -329,6 +425,15 @@ router.get('/validate', async (req, res) => {
         }
       });
     }
+    
+    // Webhook: HWID Mismatch
+    await sendWebhook('hwid_mismatch', {
+      license,
+      registeredHwid: lic.hwid.substring(0, 20) + '...',
+      attemptingHwid: hwid.substring(0, 20) + '...',
+      registeredDevice: lic.deviceName || 'Unknown',
+      ip: req.ip
+    });
     
     return res.status(409).json({
       success: false,
@@ -482,10 +587,14 @@ router.post('/request-hwid-reset', async (req, res) => {
     const requestRef = await db.collection('reset_requests').add(requestData);
     
     await logActivityBatched('RESET_REQUEST_CREATED', `License: ${license}`, req.ip, req.get('User-Agent'), license, 'medium');
+    
+    // Webhook: Reset Request Submitted
     await sendWebhook('reset_request', { 
       license, 
       reason: requestData.reason,
-      requestId: requestRef.id
+      requestId: requestRef.id,
+      deviceName: lic.deviceName || 'Unknown',
+      ip: req.ip
     });
     
     return res.json({

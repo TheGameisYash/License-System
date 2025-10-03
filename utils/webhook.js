@@ -1,35 +1,59 @@
-// utils/webhook.js - FIXED VERSION
+// utils/webhook.js - COMPLETE with ALL event types
 const https = require('https');
 const { CONFIG } = require('../config/constants');
 
 async function sendWebhook(event, data) {
   const webhookUrl = CONFIG.DISCORD_WEBHOOK_URL;
   
-  // If no webhook URL is set, skip silently
   if (!webhookUrl) {
-    console.log('⚠️  Discord webhook not configured, skipping notification');
+    console.log('⚠️  Discord webhook not configured');
     return;
   }
   
   try {
     const colors = {
       'license_generated': 0x00aaee,        // Blue
-      'device_registered': 0x2ecc71,        // Green
+      'device_registered': 0x2ecc71,        // Green ✅
       'hwid_reset': 0xffa502,               // Orange
       'license_deleted': 0xe74c3c,          // Red
       'hwid_banned': 0xff4757,              // Dark Red
       'hwid_unbanned': 0x2ecc71,            // Green
-      'reset_request': 0xf39c12,            // Yellow/Orange
+      'reset_request': 0xf39c12,            // Yellow/Orange ✅
       'reset_approved': 0x2ecc71,           // Green
       'reset_denied': 0xe74c3c,             // Red
       'license_banned': 0xff4757,           // Dark Red
-      'bulk_licenses_generated': 0x3498db   // Light Blue
+      'license_unbanned': 0x2ecc71,         // Green
+      'bulk_licenses_generated': 0x3498db,  // Light Blue
+      'hwid_conflict': 0xff6b6b,            // Light Red (NEW)
+      'license_ban_attempt': 0xff4757,      // Dark Red (NEW)
+      'activation_conflict': 0xffa502,      // Orange (NEW)
+      'license_validated': 0x95a5a6          // Gray (NEW - rare notifications)
+    };
+    
+    const emojis = {
+      'license_generated': '🎫',
+      'device_registered': '💻',
+      'hwid_reset': '↻',
+      'license_deleted': '🗑️',
+      'hwid_banned': '🚫',
+      'hwid_unbanned': '✅',
+      'reset_request': '📋',
+      'reset_approved': '✅',
+      'reset_denied': '❌',
+      'license_banned': '🚫',
+      'license_unbanned': '✅',
+      'bulk_licenses_generated': '📦',
+      'hwid_conflict': '⚠️',
+      'license_ban_attempt': '🔒',
+      'activation_conflict': '⚠️',
+      'license_validated': '✔️'
     };
     
     const eventName = event.replace(/_/g, ' ').toUpperCase();
+    const emoji = emojis[event] || '🔔';
     
     const embed = {
-      title: `🔔 ${eventName}`,
+      title: `${emoji} ${eventName}`,
       color: colors[event] || 0x00aaee,
       fields: Object.entries(data).map(([key, value]) => ({
         name: key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' '),
@@ -45,10 +69,9 @@ async function sendWebhook(event, data) {
     const payload = JSON.stringify({ 
       embeds: [embed],
       username: 'STARK MOD MENU',
-      avatar_url: 'https://cdn.discordapp.com/attachments/840689217956216852/1423715306366435469/E8z2rIf.jpg?ex=68e151b4&is=68e00034&hm=671b333001779b34108a1393638db99e07005fb58f6c04998caab478bc200d94&'
+      avatar_url: 'https://cdn.discordapp.com/attachments/840689217956216852/1423715306366435469/E8z2rIf.jpg'
     });
     
-    // Parse webhook URL
     const url = new URL(webhookUrl);
     
     const options = {
@@ -62,15 +85,12 @@ async function sendWebhook(event, data) {
       }
     };
     
-    // Send request using native https module
     const req = https.request(options, (res) => {
       if (res.statusCode === 204 || res.statusCode === 200) {
         console.log(`✅ Discord webhook sent: ${event}`);
       } else {
         console.error(`❌ Discord webhook failed: ${res.statusCode}`);
       }
-      
-      // Consume response data to free memory
       res.on('data', () => {});
     });
     

@@ -44,8 +44,8 @@ async function sendWebhook(event, data) {
     
     const payload = JSON.stringify({ 
       embeds: [embed],
-      username: 'License System',
-      avatar_url: 'https://cdn.discordapp.com/embed/avatars/0.png'
+      username: 'STARK MOD MENU',
+      avatar_url: 'https://cdn.discordapp.com/attachments/840689217956216852/1423715306366435469/E8z2rIf.jpg?ex=68e151b4&is=68e00034&hm=671b333001779b34108a1393638db99e07005fb58f6c04998caab478bc200d94&'
     });
     
     // Parse webhook URL

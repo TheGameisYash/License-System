@@ -544,13 +544,17 @@ router.post('/request-hwid-reset', async (req, res) => {
       });
     }
     
-    if (lic.hwid !== hwid) {
-      return res.status(403).json({
-        success: false,
-        code: 'HWID_MISMATCH',
-        message: 'HWID does not match license',
-        data: null
-      });
+    // REMOVED: Don't check if HWID matches - that's why they need reset!
+    // Log if HWIDs are different for admin review
+    if (lic.hwid && lic.hwid !== hwid) {
+      await logActivityBatched(
+        'RESET_REQUEST_DIFFERENT_HWID', 
+        `License ${license} registered to ${lic.hwid.substring(0, 20)}..., requesting from ${hwid.substring(0, 20)}...`, 
+        req.ip, 
+        req.get('User-Agent'), 
+        license, 
+        'medium'
+      );
     }
     
     // Check for existing pending request
@@ -575,8 +579,10 @@ router.post('/request-hwid-reset', async (req, res) => {
     // Create reset request
     const requestData = {
       license,
-      hwid: hwid.substring(0, 40) + '...',
-      fullHwid: hwid,
+      currentHwid: lic.hwid ? lic.hwid.substring(0, 40) + '...' : 'Not registered',
+      requestingHwid: hwid.substring(0, 40) + '...',
+      fullCurrentHwid: lic.hwid || null,
+      fullRequestingHwid: hwid,
       reason: sanitizeInput(reason) || 'No reason provided',
       requestedAt: new Date().toISOString(),
       status: 'pending',
@@ -591,9 +597,11 @@ router.post('/request-hwid-reset', async (req, res) => {
     // Webhook: Reset Request Submitted
     await sendWebhook('reset_request', { 
       license, 
+      currentDevice: lic.deviceName || 'Unknown',
+      currentHwid: lic.hwid ? lic.hwid.substring(0, 20) + '...' : 'Not registered',
+      requestingHwid: hwid.substring(0, 20) + '...',
       reason: requestData.reason,
       requestId: requestRef.id,
-      deviceName: lic.deviceName || 'Unknown',
       ip: req.ip
     });
     
@@ -611,15 +619,22 @@ router.post('/request-hwid-reset', async (req, res) => {
     
   } catch (error) {
     console.error('Reset request error:', error);
+    
+    // Webhook: Server Error
+    await sendWebhook('api_error', {
+      endpoint: '/api/request-hwid-reset',
+      error: error.message,
+      license: req.body.license || 'N/A'
+    });
+    
     return res.status(500).json({
       success: false,
       code: 'SERVER_ERROR',
-      message: 'Internal error',
+      message: 'Internal server error',
       data: null
     });
   }
 });
-
 // ============================================================================
 // GET /api/check-request-status - Check Reset Request Status
 // ============================================================================

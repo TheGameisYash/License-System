@@ -493,19 +493,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 **⚡ Built for Performance | 🔒 Secured by Design | 🚀 Ready for Production**
 
 **Made with ❤️ by [TheGameisYash](https://github.com/TheGameisYash)**
-How to Use This README:
-Create README.md in your License-System repository root
 
-Copy the entire code above
 
-Update the following with your actual information:
-
-Firebase project details
-
-Admin credentials examples
-
-Your actual domain/URL if different
-
-Add screenshots (optional) by creating an assets or screenshots folder
-
-Commit and push to GitHub

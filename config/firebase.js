@@ -1,30 +1,34 @@
-// config/firebase.js
-const { Firestore } = require('@google-cloud/firestore');
-const path = require('path');
-const fs = require('fs');
+const admin = require('firebase-admin');
 
 let db = null;
 
 function initializeFirebase() {
   try {
-    const saPath = path.join(__dirname, '..', 'firebase-service-account.json');
+    let serviceAccount;
 
-    if (!fs.existsSync(saPath)) {
-      throw new Error('firebase-service-account.json not found in root folder');
+    // ✅ ONLY USE ENV (Vercel safe)
+    if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+      serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+
+      // Fix private key formatting
+      if (serviceAccount.private_key) {
+        serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
+      }
+
+      console.log('✅ Firebase credentials loaded from ENV (project:', serviceAccount.project_id + ')');
+    } else {
+      throw new Error('FIREBASE_SERVICE_ACCOUNT not set in environment');
     }
 
-    const serviceAccount = JSON.parse(fs.readFileSync(saPath, 'utf8'));
-
-    console.log('✅ Firebase credentials loaded from file (project:', serviceAccount.project_id + ')');
-
-    // 🔥 REST-ONLY Firestore (NO firebase-admin, NO gRPC)
-    db = new Firestore({
-      projectId: serviceAccount.project_id,
-      credentials: serviceAccount,
-      fallback: true   // forces REST mode
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount)
     });
 
-    console.log('✅ Firebase Firestore ready (REST mode)');
+    db = admin.firestore();
+    db.settings({ ignoreUndefinedProperties: true });
+
+    console.log('✅ Firebase Firestore ready');
+
   } catch (error) {
     console.error('❌ Firebase init error:', error.message);
     process.exit(1);
@@ -32,13 +36,8 @@ function initializeFirebase() {
 }
 
 function getDb() {
-  if (!db) {
-    throw new Error('Firebase not initialized. Call initializeFirebase() first.');
-  }
+  if (!db) throw new Error('Firebase not initialized.');
   return db;
 }
 
-module.exports = {
-  initializeFirebase,
-  getDb
-};
+module.exports = { initializeFirebase, admin, getDb };

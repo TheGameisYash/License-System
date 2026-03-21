@@ -11,16 +11,24 @@ function hashPassword(p) {
 }
 
 // POST /api/users/register
+// POST /api/users/register
 router.post('/register',
     simpleRateLimit(3, 60000),
     async (req, res) => {
-        const { username, password, email, software_id } = req.body;
+        const { username, password, email, software_id, license_key } = req.body;
         const softwareId = software_id || 'default';
 
+        // ── Basic field validation ────────────────────────────
         if (!username || !password)
             return res.status(400).json({
                 success: false, code: 'MISSING_FIELDS',
                 message: 'Username and password are required', data: null
+            });
+
+        if (!license_key)
+            return res.status(400).json({
+                success: false, code: 'LICENSE_REQUIRED',
+                message: 'A valid license key is required to register', data: null
             });
 
         if (username.length < 3)
@@ -42,6 +50,37 @@ router.post('/register',
             });
 
         try {
+            const { getFirestore } = require('firebase-admin/firestore');
+            const db = getFirestore();
+
+            // ── Step 1: Validate license key exists + is ACTIVE ──
+            const licenseSnap = await db
+                .collection('software').doc(softwareId)
+                .collection('licenses').doc(license_key.trim().toUpperCase())
+                .get();
+
+            if (!licenseSnap.exists)
+                return res.status(404).json({
+                    success: false, code: 'LICENSE_NOT_FOUND',
+                    message: 'License key not found', data: null
+                });
+
+            const license = licenseSnap.data();
+
+            if (license.status !== 'active')
+                return res.status(403).json({
+                    success: false, code: 'LICENSE_INACTIVE',
+                    message: `License is ${license.status}`, data: null
+                });
+
+            // ── Step 2: Check license not already bound to another user ──
+            if (license.userId && license.userId !== '')
+                return res.status(409).json({
+                    success: false, code: 'LICENSE_ALREADY_USED',
+                    message: 'This license is already linked to another account', data: null
+                });
+
+            // ── Step 3: Check username not already taken ──────────
             const existing = await getSoftwareUser(softwareId, username.toLowerCase());
             if (existing)
                 return res.status(409).json({
@@ -49,25 +88,37 @@ router.post('/register',
                     message: 'Username already taken', data: null
                 });
 
+            // ── Step 4: Create user ───────────────────────────────
             await saveSoftwareUser(softwareId, username.toLowerCase(), {
                 username: username.toLowerCase(),
                 passwordHash: hashPassword(password),
                 email: email?.trim() || '',
                 softwareId,
-                isPremium: false,
+                licenseKey: license_key.trim().toUpperCase(),
+                isPremium: license.isPremium || false,
                 createdAt: new Date().toISOString(),
                 status: 'active'
             });
 
+            // ── Step 5: Bind userId on the license doc ────────────
+            await licenseSnap.ref.update({
+                userId: username.toLowerCase()
+            });
+
             await logActivityBatched('USER_REGISTERED',
-                `User: ${username}, Software: ${softwareId}`,
+                `User: ${username}, License: ${license_key}, Software: ${softwareId}`,
                 req.ip, req.get('User-Agent'));
 
             return res.status(201).json({
                 success: true,
                 code: 'USER_REGISTERED',
                 message: 'Account created successfully',
-                data: { username: username.toLowerCase(), softwareId }
+                data: {
+                    username: username.toLowerCase(),
+                    softwareId,
+                    licenseKey: license_key.trim().toUpperCase(),
+                    isPremium: license.isPremium || false
+                }
             });
 
         } catch (error) {
@@ -79,6 +130,7 @@ router.post('/register',
         }
     }
 );
+
 
 // POST /api/users/login
 router.post('/login',

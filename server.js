@@ -50,7 +50,7 @@ const landingRoutes = require('./routes/landing');
 const apiRoutes = require('./routes/api');
 const adminRoutes = require('./routes/admin');
 const authRoutes = require('./routes/auth');
-const pcremoteAuthRoutes = require('./routes/pcremote-auth');
+
 
 
 // Mount routes
@@ -58,7 +58,7 @@ app.use('/auth', authRoutes);
 app.use('/api', apiRoutes);
 app.use('/admin', adminRoutes);
 app.use('/', landingRoutes);
-app.use('/pcremote/auth', pcremoteAuthRoutes);
+
 
 // 404 handler
 app.use((req, res) => {

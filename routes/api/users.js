@@ -10,15 +10,16 @@ function hashPassword(p) {
     return crypto.createHash('sha256').update(p + 'license_salt_2024').digest('hex');
 }
 
+// ============================================================================
 // POST /api/users/register
-// POST /api/users/register
+// ============================================================================
 router.post('/register',
     simpleRateLimit(3, 60000),
     async (req, res) => {
         const { username, password, email, software_id, license_key } = req.body;
         const softwareId = software_id || 'default';
 
-        // ── Basic field validation ────────────────────────────
+        // ── Basic field validation ────────────────────────────────────────────
         if (!username || !password)
             return res.status(400).json({
                 success: false, code: 'MISSING_FIELDS',
@@ -53,10 +54,12 @@ router.post('/register',
             const { getFirestore } = require('firebase-admin/firestore');
             const db = getFirestore();
 
-            // ── Step 1: Validate license key exists + is ACTIVE ──
+            const normalizedKey = license_key.trim().toUpperCase();
+
+            // ── Step 1: Fetch license from ROOT licenses collection ───────────
             const licenseSnap = await db
-                .collection('software').doc(softwareId)
-                .collection('licenses').doc(license_key.trim().toUpperCase())
+                .collection('licenses')
+                .doc(normalizedKey)
                 .get();
 
             if (!licenseSnap.exists)
@@ -67,20 +70,35 @@ router.post('/register',
 
             const license = licenseSnap.data();
 
-            if (license.status !== 'active')
-                return res.status(403).json({
-                    success: false, code: 'LICENSE_INACTIVE',
-                    message: `License is ${license.status}`, data: null
+            // ── Step 2: Verify license belongs to this software ───────────────
+            if (license.softwareId !== softwareId)
+                return res.status(404).json({
+                    success: false, code: 'LICENSE_NOT_FOUND',
+                    message: 'License key not found', data: null
                 });
 
-            // ── Step 2: Check license not already bound to another user ──
-            if (license.userId && license.userId !== '')
+            // ── Step 3: Check not banned ──────────────────────────────────────
+            if (license.banned === true)
+                return res.status(403).json({
+                    success: false, code: 'LICENSE_INACTIVE',
+                    message: 'This license key has been banned', data: null
+                });
+
+            // ── Step 4: Check not expired ─────────────────────────────────────
+            if (license.expiry && new Date(license.expiry) < new Date())
+                return res.status(403).json({
+                    success: false, code: 'LICENSE_INACTIVE',
+                    message: 'This license key has expired', data: null
+                });
+
+            // ── Step 5: Check not already bound to another user ───────────────
+            if (license.userId && license.userId.trim() !== '')
                 return res.status(409).json({
                     success: false, code: 'LICENSE_ALREADY_USED',
                     message: 'This license is already linked to another account', data: null
                 });
 
-            // ── Step 3: Check username not already taken ──────────
+            // ── Step 6: Check username not already taken ──────────────────────
             const existing = await getSoftwareUser(softwareId, username.toLowerCase());
             if (existing)
                 return res.status(409).json({
@@ -88,26 +106,28 @@ router.post('/register',
                     message: 'Username already taken', data: null
                 });
 
-            // ── Step 4: Create user ───────────────────────────────
+            // ── Step 7: Create user ───────────────────────────────────────────
             await saveSoftwareUser(softwareId, username.toLowerCase(), {
                 username: username.toLowerCase(),
                 passwordHash: hashPassword(password),
                 email: email?.trim() || '',
                 softwareId,
-                licenseKey: license_key.trim().toUpperCase(),
+                licenseKey: normalizedKey,
                 isPremium: license.isPremium || false,
                 createdAt: new Date().toISOString(),
                 status: 'active'
             });
 
-            // ── Step 5: Bind userId on the license doc ────────────
-            await licenseSnap.ref.update({
-                userId: username.toLowerCase()
-            });
+            // ── Step 8: Bind userId onto the license doc ──────────────────────
+            await db.collection('licenses')
+                .doc(normalizedKey)
+                .update({ userId: username.toLowerCase() });
 
-            await logActivityBatched('USER_REGISTERED',
-                `User: ${username}, License: ${license_key}, Software: ${softwareId}`,
-                req.ip, req.get('User-Agent'));
+            await logActivityBatched(
+                'USER_REGISTERED',
+                `User: ${username}, License: ${normalizedKey}, Software: ${softwareId}`,
+                req.ip, req.get('User-Agent')
+            );
 
             return res.status(201).json({
                 success: true,
@@ -116,7 +136,7 @@ router.post('/register',
                 data: {
                     username: username.toLowerCase(),
                     softwareId,
-                    licenseKey: license_key.trim().toUpperCase(),
+                    licenseKey: normalizedKey,
                     isPremium: license.isPremium || false
                 }
             });
@@ -131,8 +151,9 @@ router.post('/register',
     }
 );
 
-
+// ============================================================================
 // POST /api/users/login
+// ============================================================================
 router.post('/login',
     simpleRateLimit(10, 60000),
     async (req, res) => {
@@ -166,9 +187,11 @@ router.post('/login',
                     message: 'Invalid username or password', data: null
                 });
 
-            await logActivityBatched('USER_LOGIN',
+            await logActivityBatched(
+                'USER_LOGIN',
                 `User: ${username}, Software: ${softwareId}`,
-                req.ip, req.get('User-Agent'));
+                req.ip, req.get('User-Agent')
+            );
 
             return res.status(200).json({
                 success: true,
@@ -178,6 +201,7 @@ router.post('/login',
                     username: user.username,
                     email: user.email || '',
                     isPremium: user.isPremium || false,
+                    licenseKey: user.licenseKey || '',
                     softwareId: user.softwareId
                 }
             });

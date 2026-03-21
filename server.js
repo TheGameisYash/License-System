@@ -1,4 +1,6 @@
 // server.js - Ultra Optimized License System
+
+process.env.FIRESTORE_PREFER_REST = 'true';
 require('dotenv').config();
 const express = require('express');
 const session = require('express-session');

@@ -7,39 +7,49 @@ function generateScripts() {
         // ============================================================================
         function filterTable() {
             const input = document.getElementById('searchInput');
-            const filter = input.value.toUpperCase();
+            const filter = input ? input.value.toUpperCase() : '';
+            const softwareFilter = (document.getElementById('softwareFilter') || {}).value || '';
+            const statusFilter = (document.getElementById('statusFilter') || {}).value || '';
             const table = document.getElementById('licenseTable');
+            if (!table) return;
             const tr = table.getElementsByTagName('tr');
             let visibleCount = 0;
             const totalCount = tr.length - 1;
             
             for (let i = 1; i < tr.length; i++) {
-                const td = tr[i].getElementsByTagName('td');
-                let found = false;
+                const row = tr[i];
+                const td = row.getElementsByTagName('td');
+                let textMatch = !filter;
+                let softwareMatch = !softwareFilter;
+                let statusMatch = !statusFilter;
                 
-                for (let j = 0; j < td.length; j++) {
-                    if (td[j]) {
-                        const txtValue = td[j].textContent || td[j].innerText;
-                        if (txtValue.toUpperCase().indexOf(filter) > -1) {
-                            found = true;
-                            break;
+                if (filter) {
+                    for (let j = 0; j < td.length; j++) {
+                        if (td[j] && (td[j].textContent || td[j].innerText).toUpperCase().indexOf(filter) > -1) {
+                            textMatch = true; break;
                         }
                     }
                 }
+                if (softwareFilter && row.dataset.software) {
+                    softwareMatch = row.dataset.software === softwareFilter;
+                }
+                if (statusFilter && row.dataset.status) {
+                    statusMatch = row.dataset.status === statusFilter;
+                }
                 
-                tr[i].style.display = found ? '' : 'none';
-                if (found) visibleCount++;
+                const show = textMatch && softwareMatch && statusMatch;
+                row.style.display = show ? '' : 'none';
+                if (show) visibleCount++;
             }
             
             const header = document.getElementById('license-list-header');
             if (header) {
-                if (visibleCount < totalCount) {
-                    header.innerHTML = '📋 License List (' + visibleCount + ' of ' + totalCount + ' shown)';
-                } else {
-                    header.innerHTML = '📋 License List (' + totalCount + ')';
-                }
+                header.innerHTML = visibleCount < totalCount
+                    ? '📋 License List (' + visibleCount + ' of ' + totalCount + ' shown)'
+                    : '📋 License List (' + totalCount + ')';
             }
         }
+
         
         // ============================================================================
         // COPY TO CLIPBOARD FUNCTIONALITY

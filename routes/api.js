@@ -9,6 +9,10 @@ const infoRoute = require('./api/info');
 const resetRoute = require('./api/reset');
 const banRoute = require('./api/ban');
 const healthRoute = require('./api/health');
+const softwareRoute = require('./api/software');
+
+// ✅ NEW: Users route
+const usersRoutes = require('./api/users');
 
 // ============================================================================
 // MOUNT ALL API ROUTES
@@ -35,13 +39,19 @@ router.use('/check-ban', banRoute);
 // Health check
 router.use('/health', healthRoute);
 
+// Software version + announcements (public)
+router.use('/software', softwareRoute);
+
+// ✅ NEW: Users routes
+router.use('/users', usersRoutes);
+
 // ============================================================================
 // API ROOT - Documentation
 // ============================================================================
 
 router.get('/', (req, res) => {
   const { CONFIG } = require('../config/constants');
-  
+
   res.json({
     success: true,
     message: 'Ultra License System API',
@@ -106,6 +116,12 @@ router.get('/', (req, res) => {
           method: 'GET',
           path: '/api/health',
           description: 'Check API health status'
+        },
+        // ✅ NEW DOC ENTRY
+        users: {
+          method: 'VARIOUS',
+          path: '/api/users',
+          description: 'User management endpoints (create, auth, etc.)'
         }
       },
       responseCodes: {
@@ -144,7 +160,8 @@ router.use('*', (req, res) => {
         'POST /api/request-hwid-reset',
         'GET /api/check-request-status',
         'GET /api/check-ban',
-        'GET /api/health'
+        'GET /api/health',
+        'ALL /api/users' // ✅ added
       ]
     }
   });

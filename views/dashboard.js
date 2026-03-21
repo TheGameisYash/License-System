@@ -1,25 +1,24 @@
-// views/dashboard.js - COMPLETE MODULAR DASHBOARD (FIXED)
+// views/dashboard.js - Updated with software + announcements data
 const { CONFIG } = require('../config/constants');
 const { isLicenseExpired } = require('../utils/helpers');
 const { getStyles } = require('./assets/styles');
 const { generateHeader } = require('./components/header');
 const { generateStats } = require('./components/stats');
-const { 
-  generateLicenseGenerationForm, 
-  generateSettingsForm, 
-  generateBanManagementForm 
-} = require('./components/forms');
+const { generateLicenseGenerationForm, generateSettingsForm, generateBanManagementForm } = require('./components/forms');
 const { generateLicenseTable } = require('./components/table');
 const { generateModals } = require('./components/modals');
 const { generateScripts } = require('./components/scripts');
 
-function generateDashboard(licenses, settings, banlist, recentLogs, cache, pendingRequestsCount) {
-  // Calculate stats
+function generateDashboard(licenses, settings, banlist, recentLogs, cache, pendingRequestsCount, allSoftware = []) {
   const totalLicenses = Object.keys(licenses).length;
   const activeLicenses = Object.values(licenses).filter(l => l.hwid && !isLicenseExpired(l) && !l.banned).length;
   const inactiveLicenses = Object.values(licenses).filter(l => !l.hwid).length;
   const expiredLicenses = Object.values(licenses).filter(l => isLicenseExpired(l)).length;
   const bannedLicenses = Object.values(licenses).filter(l => l.banned).length;
+  const softwareCount = allSoftware.length;
+
+  // Count active announcements across all software (we won't load subcollections here, just show software count)
+  const activeSoftware = allSoftware.filter(s => s.apiEnabled).length;
 
   return `
 <!DOCTYPE html>
@@ -32,14 +31,57 @@ function generateDashboard(licenses, settings, banlist, recentLogs, cache, pendi
 </head>
 <body>
     <div class="container">
-        ${generateHeader(pendingRequestsCount)}
-        ${generateStats(totalLicenses, activeLicenses, inactiveLicenses, expiredLicenses, bannedLicenses, cache.licenseCache.size)}
-        ${generateLicenseGenerationForm()}
+        ${generateHeader(pendingRequestsCount, softwareCount)}
+        ${generateStats(totalLicenses, activeLicenses, inactiveLicenses, expiredLicenses, bannedLicenses, cache.licenseCache.size, softwareCount)}
+
+        <!-- Software Quick Access -->
+        ${allSoftware.length > 0 ? `
+        <div class="section">
+            <h2>🚀 Software Products <a href="/admin/software" style="font-size:13px;color:#00aaee;text-decoration:none;font-weight:400;margin-left:10px">View All →</a></h2>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-top:12px">
+                ${allSoftware.slice(0, 6).map(sw => `
+                <a href="/admin/software/${sw.id}" style="text-decoration:none">
+                    <div style="background:rgba(26,29,35,0.8);border:1px solid ${sw.apiEnabled ? 'rgba(0,170,238,0.25)' : 'rgba(231,76,60,0.25)'};border-radius:12px;padding:14px;transition:transform 0.2s,border-color 0.2s" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='none'">
+                        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+                            <span style="font-size:22px">${sw.icon || '🔧'}</span>
+                            <span style="font-size:9px;padding:2px 7px;border-radius:8px;font-weight:700;background:${sw.apiEnabled ? 'rgba(46,204,113,0.2)' : 'rgba(231,76,60,0.2)'};color:${sw.apiEnabled ? '#2ecc71' : '#e74c3c'}">${sw.apiEnabled ? '● ON' : '● OFF'}</span>
+                        </div>
+                        <div style="font-weight:600;color:#e4e6eb;font-size:13px">${sw.name}</div>
+                        <div style="font-size:10px;color:#8b8d94;margin-top:3px">${sw.authMode === 'license_credentials' ? '🔐 Credentials' : '🎫 Key Only'} · ${sw.bindingMode === 'hwid' ? '🖥️ HWID' : sw.bindingMode === 'user_id' ? '👤 UserID' : sw.bindingMode === 'hwid_and_user_id' ? '🔒 Both' : '🔓 Free'}</div>
+                    </div>
+                </a>`).join('')}
+                ${allSoftware.length < 6 ? `<a href="/admin/software" style="text-decoration:none"><div style="background:rgba(0,170,238,0.06);border:2px dashed rgba(0,170,238,0.3);border-radius:12px;padding:14px;display:flex;align-items:center;justify-content:center;color:#00aaee;font-size:13px;min-height:95px;cursor:pointer">➕ Add Software</div></a>` : ''}
+            </div>
+        </div>` : `
+        <div class="section" style="border:2px dashed rgba(0,170,238,0.3);text-align:center;padding:30px">
+            <div style="font-size:32px;margin-bottom:10px">🚀</div>
+            <h3 style="color:#e4e6eb;margin-bottom:8px">No Software Products Yet</h3>
+            <p style="color:#8b8d94;margin-bottom:16px;font-size:13px">Create software products to organize licenses by product with per-product auth modes, binding, and announcements.</p>
+            <a href="/admin/software" class="btn btn-primary">➕ Create First Software</a>
+        </div>`}
+
+        ${generateLicenseGenerationForm(allSoftware)}
         ${generateSettingsForm(settings)}
         ${generateBanManagementForm(banlist)}
-        ${generateLicenseTable(licenses)}
+        ${generateLicenseTable(licenses, allSoftware)}
+
+        <!-- Recent Activity -->
+        ${recentLogs.length > 0 ? `
+        <div class="section">
+            <h2>📋 Recent Activity</h2>
+            <div style="space-y:4px">
+                ${recentLogs.map(log => `
+                <div style="padding:10px 14px;background:rgba(26,29,35,0.6);border-radius:8px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;border-left:3px solid ${log.severity==='high'?'#e74c3c':log.severity==='medium'?'#ffa502':'rgba(255,255,255,0.1)'}">
+                    <div>
+                        <span style="font-size:12px;font-weight:600;color:#e4e6eb">${log.action}</span>
+                        <span style="font-size:11px;color:#8b8d94;margin-left:10px">${log.details||''}</span>
+                    </div>
+                    <span style="font-size:10px;color:#8b8d94;white-space:nowrap;margin-left:12px">${log.date?new Date(log.date).toLocaleString():''}</span>
+                </div>`).join('')}
+            </div>
+        </div>` : ''}
     </div>
-    
+
     ${generateModals()}
     ${generateScripts()}
 </body>
@@ -122,16 +164,9 @@ function generateRequestManagementPage(pendingRequests, processedRequests) {
     </div>
     
     <script>
-        function showDenyModal(requestId) {
-            document.getElementById('denyRequestId').value = requestId;
-            document.getElementById('denyModal').style.display = 'block';
-        }
-        function closeDenyModal() {
-            document.getElementById('denyModal').style.display = 'none';
-        }
-        window.onclick = function(event) {
-            if (event.target.className === 'modal') event.target.style.display = 'none';
-        }
+        function showDenyModal(requestId) { document.getElementById('denyRequestId').value = requestId; document.getElementById('denyModal').style.display = 'block'; }
+        function closeDenyModal() { document.getElementById('denyModal').style.display = 'none'; }
+        window.onclick = function(event) { if (event.target.className === 'modal') event.target.style.display = 'none'; }
     </script>
 </body>
 </html>

@@ -1,21 +1,44 @@
-// views/components/table.js - FIXED VIEW NOTES BUTTON
+// views/components/table.js - Updated with Software column + filter
 const { isLicenseExpired, calculateDaysUntilExpiry } = require('../../utils/helpers');
 
-function generateLicenseTable(licenses) {
+function getSoftwareName(softwareId, allSoftware = []) {
+  if (!softwareId || softwareId === 'default') return 'Default';
+  const sw = allSoftware.find(s => s.id === softwareId);
+  return sw ? `${sw.icon || ''} ${sw.name}` : softwareId;
+}
+
+function generateLicenseTable(licenses, allSoftware = []) {
   const totalLicenses = Object.keys(licenses).length;
-  
+  const softwareOptions = allSoftware.map(sw => `<option value="${sw.id}">${sw.icon || ''} ${sw.name}</option>`).join('');
+
   return `
     <div class="section">
         <h2 id="license-list-header">📋 License List (${totalLicenses})</h2>
-        <div class="search-box">
-            <span class="search-icon">🔍</span>
-            <input type="text" id="searchInput" placeholder="Search licenses, devices, HWID..." onkeyup="filterTable()" />
+        <div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap">
+          <div class="search-box" style="flex:1;min-width:200px">
+              <span class="search-icon">🔍</span>
+              <input type="text" id="searchInput" placeholder="Search licenses, devices, HWID..." onkeyup="filterTable()" />
+          </div>
+          ${allSoftware.length > 0 ? `
+          <select id="softwareFilter" onchange="filterTable()" style="background:rgba(26,29,35,0.9);border:1px solid rgba(255,255,255,0.1);color:#e4e6eb;border-radius:10px;padding:0 14px;font-size:13px;min-width:160px">
+            <option value="">All Software</option>
+            <option value="default">Default</option>
+            ${softwareOptions}
+          </select>` : ''}
+          <select id="statusFilter" onchange="filterTable()" style="background:rgba(26,29,35,0.9);border:1px solid rgba(255,255,255,0.1);color:#e4e6eb;border-radius:10px;padding:0 14px;font-size:13px;min-width:140px">
+            <option value="">All Status</option>
+            <option value="active">🟢 Active</option>
+            <option value="inactive">🟡 Inactive</option>
+            <option value="expired">🔴 Expired</option>
+            <option value="banned">🚫 Banned</option>
+          </select>
         </div>
         <div class="table-container">
             <table id="licenseTable">
                 <thead>
                     <tr>
                         <th>License Key</th>
+                        <th>Software</th>
                         <th>HWID / Device</th>
                         <th>Expiry</th>
                         <th>Status</th>
@@ -29,20 +52,23 @@ function generateLicenseTable(licenses) {
                         const active = val.hwid && !expired && !banned;
                         const statusClass = banned ? 'banned' : (expired ? 'expired' : (active ? 'active' : 'inactive'));
                         const statusText = banned ? '🚫 BANNED' : (expired ? '🔴 EXPIRED' : (active ? '🟢 ACTIVE' : '🟡 INACTIVE'));
+                        const swName = getSoftwareName(val.softwareId, allSoftware);
                         
                         return `
-                        <tr>
+                        <tr data-status="${statusClass}" data-software="${val.softwareId || 'default'}">
                             <td>
                                 <div class="license-key" onclick="copyToClipboard('${key.replace(/'/g, "\\'")}', 'License Key')" title="Click to copy">${key}</div>
-                                ${val.notes && val.notes.length > 0 ? '<div style="font-size: 10px; color: #ffa502; margin-top: 4px;">📝 ' + val.notes.length + ' note(s)</div>' : ''}
+                                ${val.notes && val.notes.length > 0 ? `<div style="font-size: 10px; color: #ffa502; margin-top: 4px;">📝 ${val.notes.length} note(s)</div>` : ''}
+                            </td>
+                            <td>
+                                <span style="font-size:12px;color:#a0a3a8;background:rgba(255,255,255,0.05);padding:3px 8px;border-radius:8px">${swName}</span>
                             </td>
                             <td>
                                 ${val.hwid ? `
                                     <div class="hwid-container" onclick="copyToClipboard('${val.hwid.replace(/'/g, "\\'")}', 'HWID')">
-                                        <div style="font-weight: 600; color: #00aaee; font-size: 12px;">
-                                            📱 ${val.deviceName || 'Unknown Device'}
-                                        </div>
+                                        <div style="font-weight: 600; color: #00aaee; font-size: 12px;">📱 ${val.deviceName || 'Unknown Device'}</div>
                                         <div class="hwid-display">${val.hwid}</div>
+                                        ${val.userId ? `<div style="font-size:10px;color:#9b59b6;margin-top:2px">👤 ${val.userId}</div>` : ''}
                                     </div>
                                 ` : '<span style="color: #8b8d94;">Not activated</span>'}
                             </td>
@@ -68,22 +94,16 @@ function generateLicenseTable(licenses) {
                                     ` : `
                                         <form method="post" action="/admin/unban-license" style="display: inline;">
                                             <input type="hidden" name="license" value="${key}" />
-                                            <button type="submit" class="btn btn-success" style="padding: 6px 12px; font-size: 11px;" onclick="return confirm('Unban ${key}?')" title="Unban License">✅</button>
+                                            <button type="submit" class="btn btn-success" style="padding: 6px 12px; font-size: 11px;" onclick="return confirm('Unban ${key}?')" title="Unban">✅</button>
                                         </form>
                                     `}
                                     <button onclick="showNoteModal('${key.replace(/'/g, "\\'")}', '${(val.deviceName || 'Unknown').replace(/'/g, "\\'")}', ${val.notes ? val.notes.length : 0})" class="btn btn-primary" style="padding: 6px 12px; font-size: 11px;" title="Add Note">📝</button>
                                     ${val.notes && val.notes.length > 0 ? `
-                                        <button onclick="viewNotes_${key.replace(/[^a-zA-Z0-9]/g, '_')}()" class="btn btn-primary" style="padding: 6px 12px; font-size: 11px; background: linear-gradient(45deg, #3498db, #2980b9);" title="View ${val.notes.length} Note(s)">👁️</button>
-                                        <script>
-                                            function viewNotes_${key.replace(/[^a-zA-Z0-9]/g, '_')}() {
-                                                const notes = ${JSON.stringify(val.notes || [])};
-                                                showViewNotesModal('${key.replace(/'/g, "\\'")}', notes);
-                                            }
-                                        </script>
+                                        <button onclick="showViewNotesModal('${key.replace(/'/g, "\\'")}', ${JSON.stringify(val.notes || [])})" class="btn btn-primary" style="padding: 6px 12px; font-size: 11px; background: linear-gradient(45deg, #3498db, #2980b9);" title="View Notes">👁️</button>
                                     ` : ''}
                                     <form method="post" action="/admin/delete-license" style="display: inline;">
                                         <input type="hidden" name="license" value="${key}" />
-                                        <button type="submit" class="btn btn-danger" style="padding: 6px 12px; font-size: 11px;" onclick="return confirm('Delete ${key}? This cannot be undone!')" title="Delete License">🗑️</button>
+                                        <button type="submit" class="btn btn-danger" style="padding: 6px 12px; font-size: 11px;" onclick="return confirm('Delete ${key}? This cannot be undone!')" title="Delete">🗑️</button>
                                     </form>
                                 </div>
                             </td>

@@ -1,5 +1,9 @@
-// views/components/forms.js
-function generateLicenseGenerationForm() {
+// views/components/forms.js - Updated with software selector
+function generateLicenseGenerationForm(allSoftware = []) {
+  const softwareOptions = allSoftware.length > 0
+    ? allSoftware.map(sw => `<option value="${sw.id}">${sw.icon || ''} ${sw.name}</option>`).join('')
+    : '<option value="default">Default</option>';
+
   return `
     <div class="section">
         <h2>🎫 License Generation</h2>
@@ -7,14 +11,20 @@ function generateLicenseGenerationForm() {
             <div class="form-grid">
                 <input name="license" placeholder="Custom Key (optional)" />
                 <input name="expiry" type="date" />
+                <select name="softwareId">
+                    ${softwareOptions}
+                </select>
                 <button type="submit" class="btn btn-primary">Generate</button>
             </div>
         </form>
-        <form method="post" action="/admin/bulk-generate">
+        <form method="post" action="/admin/bulk-generate" style="margin-top: 12px;">
             <div class="form-grid">
                 <input name="count" type="number" placeholder="Qty (max 100)" min="1" max="100" />
-                <input name="prefix" placeholder="Prefix" />
+                <input name="prefix" placeholder="Prefix (leave empty = software prefix)" />
                 <input name="expiry" type="date" />
+                <select name="softwareId">
+                    ${softwareOptions}
+                </select>
                 <button type="submit" class="btn btn-primary">Bulk Generate</button>
             </div>
         </form>
@@ -29,7 +39,7 @@ function generateSettingsForm(settings) {
         <form method="post" action="/admin/update-settings">
             <div style="display: flex; gap: 25px; align-items: center; margin-bottom: 15px; flex-wrap: wrap;">
                 <div style="display: flex; align-items: center; gap: 12px;">
-                    <span>API Enabled</span>
+                    <span>Global API Enabled</span>
                     <label class="toggle-switch">
                         <input type="checkbox" name="apiEnabled" value="true" ${settings.apiEnabled ? 'checked' : ''} />
                         <span class="toggle-slider"></span>
@@ -81,8 +91,4 @@ function generateBanManagementForm(banlist) {
   `;
 }
 
-module.exports = { 
-  generateLicenseGenerationForm, 
-  generateSettingsForm, 
-  generateBanManagementForm 
-};
+module.exports = { generateLicenseGenerationForm, generateSettingsForm, generateBanManagementForm };

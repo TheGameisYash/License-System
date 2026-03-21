@@ -1,23 +1,30 @@
 // config/firebase.js
-const admin = require('firebase-admin');
+const { Firestore } = require('@google-cloud/firestore');
+const path = require('path');
+const fs = require('fs');
 
 let db = null;
 
 function initializeFirebase() {
   try {
-    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}');
-    
-    if (!serviceAccount.project_id) {
-      throw new Error('Invalid Firebase credentials in .env file');
+    const saPath = path.join(__dirname, '..', 'firebase-service-account.json');
+
+    if (!fs.existsSync(saPath)) {
+      throw new Error('firebase-service-account.json not found in root folder');
     }
-    
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
-      databaseURL: `https://${serviceAccount.project_id}.firebaseio.com`
+
+    const serviceAccount = JSON.parse(fs.readFileSync(saPath, 'utf8'));
+
+    console.log('✅ Firebase credentials loaded from file (project:', serviceAccount.project_id + ')');
+
+    // 🔥 REST-ONLY Firestore (NO firebase-admin, NO gRPC)
+    db = new Firestore({
+      projectId: serviceAccount.project_id,
+      credentials: serviceAccount,
+      fallback: true   // forces REST mode
     });
-    
-    db = admin.firestore();
-    console.log('✅ Firebase initialized successfully');
+
+    console.log('✅ Firebase Firestore ready (REST mode)');
   } catch (error) {
     console.error('❌ Firebase init error:', error.message);
     process.exit(1);
@@ -26,13 +33,12 @@ function initializeFirebase() {
 
 function getDb() {
   if (!db) {
-    throw new Error('Firebase not initialized. Call initializeApp() first.');
+    throw new Error('Firebase not initialized. Call initializeFirebase() first.');
   }
   return db;
 }
 
-module.exports = { 
-  initializeFirebase, 
-  admin, 
-  getDb 
+module.exports = {
+  initializeFirebase,
+  getDb
 };

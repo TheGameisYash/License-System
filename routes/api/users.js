@@ -136,13 +136,15 @@ router.post('/register', simpleRateLimit(3, 60000), async (req, res) => {
 
         // ── Step 4: Create user ───────────────────────────────────────────────
         const now = new Date().toISOString();
+        const isPremium = license.isPremium === true;   // ✅ strict boolean
+
         await saveSoftwareUser(softwareId, normalizedUser, {
             username: normalizedUser,
             passwordHash: hashPassword(password),
             email: email?.trim().toLowerCase() || '',
             softwareId,
             licenseKey: normalizedKey,
-            isPremium: license.isPremium || false,
+            isPremium,
             createdAt: now,
             lastLogin: now,
             status: 'active'
@@ -162,7 +164,7 @@ router.post('/register', simpleRateLimit(3, 60000), async (req, res) => {
         }
 
         await logActivityBatched('USER_REGISTERED',
-            `User: ${normalizedUser}, License: ${normalizedKey}, Software: ${softwareId}`,
+            `User: ${normalizedUser}, License: ${normalizedKey}, Software: ${softwareId}, Premium: ${isPremium}`,
             req.ip, req.get('User-Agent'));
 
         return res.status(201).json({
@@ -173,7 +175,7 @@ router.post('/register', simpleRateLimit(3, 60000), async (req, res) => {
                 username: normalizedUser,
                 softwareId,
                 licenseKey: normalizedKey,
-                isPremium: license.isPremium || false,
+                isPremium,
                 licenseStatus: 'active',
                 expiresAt,
                 activatedAt: now
@@ -232,7 +234,7 @@ router.post('/login', simpleRateLimit(10, 60000), async (req, res) => {
 
         // ── Step 4: Live license validation ───────────────────────────────────
         let licenseStatus = 'unknown';
-        let isPremium = user.isPremium || false;
+        let isPremium = false;          // always re-derive from live license
         let expiresAt = null;
         let licenseCode = null;
 
@@ -240,16 +242,15 @@ router.post('/login', simpleRateLimit(10, 60000), async (req, res) => {
             const licCheck = await validateLicense(db, user.licenseKey, softwareId);
 
             if (!licCheck.ok) {
-                // License was revoked/banned/expired after registration
-                licenseStatus = licCheck.code;   // e.g. 'LICENSE_BANNED'
+                // License revoked / banned / expired after registration
+                licenseStatus = licCheck.code;
                 isPremium = false;
                 licenseCode = licCheck.code;
 
-                // Still allow login but return license status so app can show warning
             } else {
                 const license = licCheck.license;
                 licenseStatus = 'active';
-                isPremium = license.isPremium || false;
+                isPremium = license.isPremium === true;  // ✅ strict boolean
 
                 if (license.expiry) {
                     const d = license.expiry.toDate
@@ -258,18 +259,34 @@ router.post('/login', simpleRateLimit(10, 60000), async (req, res) => {
                     expiresAt = d.toISOString();
                 }
             }
+
+            // ── ✅ Sync isPremium back to user doc if it changed ──────────────
+            if (user.isPremium !== isPremium) {
+                await saveSoftwareUser(softwareId, normalizedUser, {
+                    ...user,
+                    isPremium,
+                    lastLogin: new Date().toISOString()
+                });
+            } else {
+                // ── Step 5: Update lastLogin only ─────────────────────────────
+                await saveSoftwareUser(softwareId, normalizedUser, {
+                    ...user,
+                    lastLogin: new Date().toISOString()
+                });
+            }
+
         } else {
             licenseStatus = 'NO_LICENSE';
+
+            // Still update lastLogin
+            await saveSoftwareUser(softwareId, normalizedUser, {
+                ...user,
+                lastLogin: new Date().toISOString()
+            });
         }
 
-        // ── Step 5: Update lastLogin ──────────────────────────────────────────
-        await saveSoftwareUser(softwareId, normalizedUser, {
-            ...user,
-            lastLogin: new Date().toISOString()
-        });
-
         await logActivityBatched('USER_LOGIN',
-            `User: ${normalizedUser}, License: ${user.licenseKey || 'none'}, Status: ${licenseStatus}`,
+            `User: ${normalizedUser}, License: ${user.licenseKey || 'none'}, Premium: ${isPremium}, Status: ${licenseStatus}`,
             req.ip, req.get('User-Agent'));
 
         return res.status(200).json({
@@ -281,10 +298,10 @@ router.post('/login', simpleRateLimit(10, 60000), async (req, res) => {
                 email: user.email || '',
                 softwareId: user.softwareId,
                 licenseKey: user.licenseKey || '',
-                isPremium,
-                licenseStatus,                        // 'active' | 'LICENSE_BANNED' | 'LICENSE_EXPIRED' | 'NO_LICENSE'
-                licenseWarning: licenseCode,          // null if all good, error code if issue
-                expiresAt,                            // null = never expires
+                isPremium,                              // ✅ always from live license
+                licenseStatus,                          // 'active' | 'LICENSE_BANNED' | 'LICENSE_EXPIRED' | 'NO_LICENSE'
+                licenseWarning: licenseCode,            // null = all good
+                expiresAt,                              // null = never expires
                 lastLogin: user.lastLogin || null
             }
         });

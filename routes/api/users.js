@@ -10,210 +10,292 @@ function hashPassword(p) {
     return crypto.createHash('sha256').update(p + 'license_salt_2024').digest('hex');
 }
 
+// ── Shared license validator ──────────────────────────────────────────────────
+async function validateLicense(db, normalizedKey, softwareId) {
+    const snap = await db.collection('licenses').doc(normalizedKey).get();
+
+    if (!snap.exists)
+        return {
+            ok: false, code: 'LICENSE_NOT_FOUND', status: 404,
+            message: 'License key does not exist'
+        };
+
+    const l = snap.data();
+
+    if (l.softwareId !== softwareId)
+        return {
+            ok: false, code: 'LICENSE_NOT_FOUND', status: 404,
+            message: 'License key does not exist'
+        };
+
+    if (l.banned === true)
+        return {
+            ok: false, code: 'LICENSE_BANNED', status: 403,
+            message: 'This license key has been banned'
+        };
+
+    if (l.expiry) {
+        const expires = l.expiry.toDate ? l.expiry.toDate() : new Date(l.expiry);
+        if (expires < new Date())
+            return {
+                ok: false, code: 'LICENSE_EXPIRED', status: 403,
+                message: `License expired on ${expires.toLocaleDateString()}`
+            };
+    }
+
+    return { ok: true, data: snap, license: l };
+}
+
 // ============================================================================
 // POST /api/users/register
 // ============================================================================
-router.post('/register',
-    simpleRateLimit(3, 60000),
-    async (req, res) => {
-        const { username, password, email, software_id, license_key } = req.body;
-        const softwareId = software_id || 'default';
+router.post('/register', simpleRateLimit(3, 60000), async (req, res) => {
+    const { username, password, email, software_id, license_key } = req.body;
+    const softwareId = software_id || 'default';
 
-        // ── Basic field validation ────────────────────────────────────────────
-        if (!username || !password)
-            return res.status(400).json({
-                success: false, code: 'MISSING_FIELDS',
-                message: 'Username and password are required', data: null
+    // ── Field validation ──────────────────────────────────────────────────────
+    const missingFields = [];
+    if (!username) missingFields.push('username');
+    if (!password) missingFields.push('password');
+    if (!license_key) missingFields.push('license_key');
+
+    if (missingFields.length > 0)
+        return res.status(400).json({
+            success: false, code: 'MISSING_FIELDS',
+            message: `Missing required fields: ${missingFields.join(', ')}`,
+            data: { missingFields }
+        });
+
+    if (username.length < 3)
+        return res.status(400).json({
+            success: false, code: 'USERNAME_TOO_SHORT',
+            message: 'Username must be at least 3 characters', data: null
+        });
+
+    if (username.length > 20)
+        return res.status(400).json({
+            success: false, code: 'USERNAME_TOO_LONG',
+            message: 'Username must be 20 characters or less', data: null
+        });
+
+    if (!/^[a-zA-Z0-9_]+$/.test(username))
+        return res.status(400).json({
+            success: false, code: 'INVALID_USERNAME',
+            message: 'Username may only contain letters, numbers and underscores', data: null
+        });
+
+    if (password.length < 4)
+        return res.status(400).json({
+            success: false, code: 'PASSWORD_TOO_SHORT',
+            message: 'Password must be at least 4 characters', data: null
+        });
+
+    if (password.length > 64)
+        return res.status(400).json({
+            success: false, code: 'PASSWORD_TOO_LONG',
+            message: 'Password must be 64 characters or less', data: null
+        });
+
+    if (license_key.trim().length < 2)
+        return res.status(400).json({
+            success: false, code: 'INVALID_LICENSE_FORMAT',
+            message: 'Invalid license key format', data: null
+        });
+
+    try {
+        const { getFirestore } = require('firebase-admin/firestore');
+        const db = getFirestore();
+        const normalizedKey = license_key.trim().toUpperCase();
+        const normalizedUser = username.trim().toLowerCase();
+
+        // ── Step 1: Validate license ──────────────────────────────────────────
+        const licCheck = await validateLicense(db, normalizedKey, softwareId);
+        if (!licCheck.ok)
+            return res.status(licCheck.status).json({
+                success: false, code: licCheck.code,
+                message: licCheck.message, data: null
             });
 
-        if (!license_key)
-            return res.status(400).json({
-                success: false, code: 'LICENSE_REQUIRED',
-                message: 'A valid license key is required to register', data: null
+        const { data: licenseSnap, license } = licCheck;
+
+        // ── Step 2: License already claimed? ─────────────────────────────────
+        if (license.userId && license.userId.trim() !== '')
+            return res.status(409).json({
+                success: false, code: 'LICENSE_ALREADY_USED',
+                message: 'This license is already linked to an existing account',
+                data: null
             });
 
-        if (username.length < 3)
-            return res.status(400).json({
-                success: false, code: 'USERNAME_TOO_SHORT',
-                message: 'Username must be at least 3 characters', data: null
+        // ── Step 3: Username taken? ───────────────────────────────────────────
+        const existing = await getSoftwareUser(softwareId, normalizedUser);
+        if (existing)
+            return res.status(409).json({
+                success: false, code: 'USER_EXISTS',
+                message: 'Username is already taken', data: null
             });
 
-        if (password.length < 4)
-            return res.status(400).json({
-                success: false, code: 'PASSWORD_TOO_SHORT',
-                message: 'Password must be at least 4 characters', data: null
-            });
+        // ── Step 4: Create user ───────────────────────────────────────────────
+        const now = new Date().toISOString();
+        await saveSoftwareUser(softwareId, normalizedUser, {
+            username: normalizedUser,
+            passwordHash: hashPassword(password),
+            email: email?.trim().toLowerCase() || '',
+            softwareId,
+            licenseKey: normalizedKey,
+            isPremium: license.isPremium || false,
+            createdAt: now,
+            lastLogin: now,
+            status: 'active'
+        });
 
-        if (!/^[a-zA-Z0-9]+$/.test(username))
-            return res.status(400).json({
-                success: false, code: 'INVALID_USERNAME',
-                message: 'Username must be letters and numbers only', data: null
-            });
+        // ── Step 5: Activate license — bind userId + activatedAt ──────────────
+        await db.collection('licenses').doc(normalizedKey).update({
+            userId: normalizedUser,
+            activatedAt: now
+        });
 
-        try {
-            const { getFirestore } = require('firebase-admin/firestore');
-            const db = getFirestore();
+        // ── Step 6: Build expiry info for response ────────────────────────────
+        let expiresAt = null;
+        if (license.expiry) {
+            const d = license.expiry.toDate ? license.expiry.toDate() : new Date(license.expiry);
+            expiresAt = d.toISOString();
+        }
 
-            const normalizedKey = license_key.trim().toUpperCase();
+        await logActivityBatched('USER_REGISTERED',
+            `User: ${normalizedUser}, License: ${normalizedKey}, Software: ${softwareId}`,
+            req.ip, req.get('User-Agent'));
 
-            // ── Step 1: Fetch license from ROOT licenses collection ───────────
-            const licenseSnap = await db
-                .collection('licenses')
-                .doc(normalizedKey)
-                .get();
-
-            if (!licenseSnap.exists)
-                return res.status(404).json({
-                    success: false, code: 'LICENSE_NOT_FOUND',
-                    message: 'License key not found', data: null
-                });
-
-            const license = licenseSnap.data();
-
-            // ── Step 2: Verify license belongs to this software ───────────────
-            if (license.softwareId !== softwareId)
-                return res.status(404).json({
-                    success: false, code: 'LICENSE_NOT_FOUND',
-                    message: 'License key not found', data: null
-                });
-
-            // ── Step 3: Check not banned ──────────────────────────────────────
-            if (license.banned === true)
-                return res.status(403).json({
-                    success: false, code: 'LICENSE_INACTIVE',
-                    message: 'This license key has been banned', data: null
-                });
-
-            // ── Step 4: Check not expired ─────────────────────────────────────
-            if (license.expiry && new Date(license.expiry) < new Date())
-                return res.status(403).json({
-                    success: false, code: 'LICENSE_INACTIVE',
-                    message: 'This license key has expired', data: null
-                });
-
-            // ── Step 5: Check not already bound to another user ───────────────
-            if (license.userId && license.userId.trim() !== '')
-                return res.status(409).json({
-                    success: false, code: 'LICENSE_ALREADY_USED',
-                    message: 'This license is already linked to another account', data: null
-                });
-
-            // ── Step 6: Check username not already taken ──────────────────────
-            const existing = await getSoftwareUser(softwareId, username.toLowerCase());
-            if (existing)
-                return res.status(409).json({
-                    success: false, code: 'USER_EXISTS',
-                    message: 'Username already taken', data: null
-                });
-
-            // ── Step 7: Create user ───────────────────────────────────────────
-            await saveSoftwareUser(softwareId, username.toLowerCase(), {
-                username: username.toLowerCase(),
-                passwordHash: hashPassword(password),
-                email: email?.trim() || '',
+        return res.status(201).json({
+            success: true,
+            code: 'USER_REGISTERED',
+            message: 'Account created and license activated successfully',
+            data: {
+                username: normalizedUser,
                 softwareId,
                 licenseKey: normalizedKey,
                 isPremium: license.isPremium || false,
-                createdAt: new Date().toISOString(),
-                status: 'active'
-            });
+                licenseStatus: 'active',
+                expiresAt,
+                activatedAt: now
+            }
+        });
 
-            // ── Step 8: Bind userId onto the license doc ──────────────────────
-            await db.collection('licenses')
-                .doc(normalizedKey)
-                .update({ userId: username.toLowerCase() });
-
-            await logActivityBatched(
-                'USER_REGISTERED',
-                `User: ${username}, License: ${normalizedKey}, Software: ${softwareId}`,
-                req.ip, req.get('User-Agent')
-            );
-
-            return res.status(201).json({
-                success: true,
-                code: 'USER_REGISTERED',
-                message: 'Account created successfully',
-                data: {
-                    username: username.toLowerCase(),
-                    softwareId,
-                    licenseKey: normalizedKey,
-                    isPremium: license.isPremium || false
-                }
-            });
-
-        } catch (error) {
-            console.error('Register error:', error);
-            return res.status(500).json({
-                success: false, code: 'SERVER_ERROR',
-                message: 'Internal server error', data: null
-            });
-        }
+    } catch (error) {
+        console.error('[Register]', error);
+        return res.status(500).json({
+            success: false, code: 'SERVER_ERROR',
+            message: 'Internal server error. Please try again.', data: null
+        });
     }
-);
+});
 
 // ============================================================================
 // POST /api/users/login
 // ============================================================================
-router.post('/login',
-    simpleRateLimit(10, 60000),
-    async (req, res) => {
-        const { username, password, software_id } = req.body;
-        const softwareId = software_id || 'default';
+router.post('/login', simpleRateLimit(10, 60000), async (req, res) => {
+    const { username, password, software_id } = req.body;
+    const softwareId = software_id || 'default';
 
-        if (!username || !password)
-            return res.status(400).json({
-                success: false, code: 'MISSING_FIELDS',
-                message: 'Username and password are required', data: null
+    if (!username || !password)
+        return res.status(400).json({
+            success: false, code: 'MISSING_FIELDS',
+            message: 'Username and password are required', data: null
+        });
+
+    try {
+        const { getFirestore } = require('firebase-admin/firestore');
+        const db = getFirestore();
+        const normalizedUser = username.trim().toLowerCase();
+
+        // ── Step 1: Find user ─────────────────────────────────────────────────
+        const user = await getSoftwareUser(softwareId, normalizedUser);
+
+        if (!user)
+            return res.status(401).json({
+                success: false, code: 'INVALID_CREDENTIALS',
+                message: 'Invalid username or password', data: null
             });
 
-        try {
-            const user = await getSoftwareUser(softwareId, username.toLowerCase());
+        // ── Step 2: Account banned? ───────────────────────────────────────────
+        if (user.status === 'banned')
+            return res.status(403).json({
+                success: false, code: 'ACCOUNT_BANNED',
+                message: 'Your account has been suspended. Contact support.', data: null
+            });
 
-            if (!user)
-                return res.status(401).json({
-                    success: false, code: 'INVALID_CREDENTIALS',
-                    message: 'Invalid username or password', data: null
-                });
+        // ── Step 3: Password check ────────────────────────────────────────────
+        if (user.passwordHash !== hashPassword(password))
+            return res.status(401).json({
+                success: false, code: 'INVALID_CREDENTIALS',
+                message: 'Invalid username or password', data: null
+            });
 
-            if (user.status === 'banned')
-                return res.status(403).json({
-                    success: false, code: 'USER_BANNED',
-                    message: 'Your account has been banned', data: null
-                });
+        // ── Step 4: Live license validation ───────────────────────────────────
+        let licenseStatus = 'unknown';
+        let isPremium = user.isPremium || false;
+        let expiresAt = null;
+        let licenseCode = null;
 
-            if (user.passwordHash !== hashPassword(password))
-                return res.status(401).json({
-                    success: false, code: 'INVALID_CREDENTIALS',
-                    message: 'Invalid username or password', data: null
-                });
+        if (user.licenseKey) {
+            const licCheck = await validateLicense(db, user.licenseKey, softwareId);
 
-            await logActivityBatched(
-                'USER_LOGIN',
-                `User: ${username}, Software: ${softwareId}`,
-                req.ip, req.get('User-Agent')
-            );
+            if (!licCheck.ok) {
+                // License was revoked/banned/expired after registration
+                licenseStatus = licCheck.code;   // e.g. 'LICENSE_BANNED'
+                isPremium = false;
+                licenseCode = licCheck.code;
 
-            return res.status(200).json({
-                success: true,
-                code: 'LOGIN_OK',
-                message: 'Login successful',
-                data: {
-                    username: user.username,
-                    email: user.email || '',
-                    isPremium: user.isPremium || false,
-                    licenseKey: user.licenseKey || '',
-                    softwareId: user.softwareId
+                // Still allow login but return license status so app can show warning
+            } else {
+                const license = licCheck.license;
+                licenseStatus = 'active';
+                isPremium = license.isPremium || false;
+
+                if (license.expiry) {
+                    const d = license.expiry.toDate
+                        ? license.expiry.toDate()
+                        : new Date(license.expiry);
+                    expiresAt = d.toISOString();
                 }
-            });
-
-        } catch (error) {
-            console.error('Login error:', error);
-            return res.status(500).json({
-                success: false, code: 'SERVER_ERROR',
-                message: 'Internal server error', data: null
-            });
+            }
+        } else {
+            licenseStatus = 'NO_LICENSE';
         }
+
+        // ── Step 5: Update lastLogin ──────────────────────────────────────────
+        await saveSoftwareUser(softwareId, normalizedUser, {
+            ...user,
+            lastLogin: new Date().toISOString()
+        });
+
+        await logActivityBatched('USER_LOGIN',
+            `User: ${normalizedUser}, License: ${user.licenseKey || 'none'}, Status: ${licenseStatus}`,
+            req.ip, req.get('User-Agent'));
+
+        return res.status(200).json({
+            success: true,
+            code: 'LOGIN_OK',
+            message: 'Login successful',
+            data: {
+                username: user.username,
+                email: user.email || '',
+                softwareId: user.softwareId,
+                licenseKey: user.licenseKey || '',
+                isPremium,
+                licenseStatus,                        // 'active' | 'LICENSE_BANNED' | 'LICENSE_EXPIRED' | 'NO_LICENSE'
+                licenseWarning: licenseCode,          // null if all good, error code if issue
+                expiresAt,                            // null = never expires
+                lastLogin: user.lastLogin || null
+            }
+        });
+
+    } catch (error) {
+        console.error('[Login]', error);
+        return res.status(500).json({
+            success: false, code: 'SERVER_ERROR',
+            message: 'Internal server error. Please try again.', data: null
+        });
     }
-);
+});
 
 module.exports = router;

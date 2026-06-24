@@ -14,15 +14,11 @@ const {
   logActivityBatched
 } = require('../../utils/optimization');
 
-const { sanitizeInput } = require('../../utils/validators');
-const { isLicenseExpired } = require('../../utils/helpers');
+const { sanitizeInput, validateHWID } = require('../../utils/validators');
+const { isLicenseExpired, hashPassword } = require('../../utils/helpers');
 const { sendWebhook } = require('../../utils/webhook');
 const { getSoftwareUser } = require('../../utils/database');
 const { checkAPIEnabled, validateHWIDMiddleware, validateLicenseKey, checkHWIDBanned, simpleRateLimit, validateSoftwareAPIKey } = require('../../middleware/apiValidation');
-
-function hashPassword(p) {
-  return crypto.createHash('sha256').update(p + 'license_salt_2024').digest('hex');
-}
 
 // POST /api/register
 router.post('/',
@@ -80,6 +76,16 @@ router.post('/',
 
       // ── HWID conflict check (only if binding includes HWID)
       const needsHwid = ['hwid', 'hwid_and_user_id'].includes(sw.bindingMode);
+
+      // ── Validate HWID format if binding requires it
+      if (needsHwid && hwid && !validateHWID(hwid)) {
+        return res.status(400).json({ success: false, code: 'INVALID_HWID', message: 'Invalid HWID format. Must be 10-256 characters.', data: null });
+      }
+
+      if (needsHwid && !hwid) {
+        return res.status(400).json({ success: false, code: 'MISSING_HWID', message: 'HWID is required for this software', data: null });
+      }
+
       if (needsHwid && hwid) {
         const existingLicense = await getLicenseByHwid(hwid);
         if (existingLicense && existingLicense !== license) {

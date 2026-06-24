@@ -16,14 +16,10 @@ const {
 } = require('../../utils/optimization');
 
 const { validateHWID } = require('../../utils/validators');
-const { calculateDaysUntilExpiry, isLicenseExpired } = require('../../utils/helpers');
+const { calculateDaysUntilExpiry, isLicenseExpired, hashPassword } = require('../../utils/helpers');
 const { sendWebhook } = require('../../utils/webhook');
 const { getSoftwareUser } = require('../../utils/database');
 const { validateSoftwareAPIKey } = require('../../middleware/apiValidation');
-
-function hashPassword(password) {
-  return crypto.createHash('sha256').update(password + 'license_salt_2024').digest('hex');
-}
 
 // GET /api/validate
 router.get('/', validateSoftwareAPIKey, async (req, res) => {
@@ -119,9 +115,9 @@ router.get('/', validateSoftwareAPIKey, async (req, res) => {
 
     await logActivityBatched('API_VALIDATE', `License: ${license}, Software: ${softwareId}`, req.ip, req.get('User-Agent'));
 
-    // ── Global system check (fallback)
+    // ── Global system check
     const settings = await getSettingsCached();
-    if (!settings.apiEnabled && !sw.apiEnabled) {
+    if (!settings.apiEnabled) {
       return res.status(503).json({ success: false, code: 'API_DISABLED', message: 'System API is disabled', data: null });
     }
 
@@ -187,6 +183,7 @@ router.get('/', validateSoftwareAPIKey, async (req, res) => {
     }
 
     // ── Success — update counters (batch-friendly: only write every 10 validations)
+    const daysRemaining = calculateDaysUntilExpiry(lic.expiry);
     const updatedLic = { ...lic, lastValidated: new Date().toISOString(), validationCount: (lic.validationCount || 0) + 1 };
     if (updatedLic.validationCount % 10 === 0) {
       await saveLicenseAndInvalidateCache(license, updatedLic);
@@ -210,7 +207,7 @@ router.get('/', validateSoftwareAPIKey, async (req, res) => {
         deviceName: lic.deviceName,
         expiry: lic.expiry,
         expiryDate: lic.expiry ? new Date(lic.expiry).toLocaleDateString() : 'Never',
-        daysRemaining: calculateDaysUntilExpiry(lic.expiry) !== null ? calculateDaysUntilExpiry(lic.expiry) : 'Unlimited',
+        daysRemaining: daysRemaining !== null ? daysRemaining : 'Unlimited',
         lastValidated: new Date().toISOString(),
         validationCount: updatedLic.validationCount,
         customerName: lic.customerName || null,

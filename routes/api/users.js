@@ -1,14 +1,11 @@
 const express = require('express');
 const router = express.Router();
-const crypto = require('crypto');
 
 const { simpleRateLimit } = require('../../middleware/apiValidation');
 const { logActivityBatched } = require('../../utils/optimization');
 const { getSoftwareUser, saveSoftwareUser } = require('../../utils/database');
-
-function hashPassword(p) {
-    return crypto.createHash('sha256').update(p + 'license_salt_2024').digest('hex');
-}
+const { getDb } = require('../../config/firebase');
+const { hashPassword } = require('../../utils/helpers');
 
 // ── Shared license validator ──────────────────────────────────────────────────
 async function validateLicense(db, normalizedKey, softwareId) {
@@ -103,8 +100,7 @@ router.post('/register', simpleRateLimit(3, 60000), async (req, res) => {
         });
 
     try {
-        const { getFirestore } = require('firebase-admin/firestore');
-        const db = getFirestore();
+        const db = getDb();
         const normalizedKey = license_key.trim().toUpperCase();
         const normalizedUser = username.trim().toLowerCase();
 
@@ -205,8 +201,7 @@ router.post('/login', simpleRateLimit(10, 60000), async (req, res) => {
         });
 
     try {
-        const { getFirestore } = require('firebase-admin/firestore');
-        const db = getFirestore();
+        const db = getDb();
         const normalizedUser = username.trim().toLowerCase();
 
         // ── Step 1: Find user ─────────────────────────────────────────────────

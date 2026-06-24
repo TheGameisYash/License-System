@@ -186,9 +186,8 @@ async function saveSoftware(softwareId, data) {
 async function deleteSoftware(softwareId) {
   try {
     const db = getDb();
-    const db_ = getDb();
     // Delete software doc + all its announcements + users in batch
-    const batch = db_.batch();
+    const batch = db.batch();
     batch.delete(db.collection('software').doc(softwareId));
 
     // Delete announcements subcollection

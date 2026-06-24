@@ -26,7 +26,7 @@ const {
   getAllSoftwareCached
 } = require('../utils/optimization');
 
-const { generateSecureLicenseKey } = require('../utils/helpers');
+const { generateSecureLicenseKey, hashPassword } = require('../utils/helpers');
 const { sanitizeInput } = require('../utils/validators');
 const { sendWebhook } = require('../utils/webhook');
 const cache = require('../utils/cache');
@@ -41,9 +41,6 @@ router.use(requireLogin);
 // HELPERS
 // ============================================================================
 
-function hashPassword(password) {
-  return crypto.createHash('sha256').update(password + 'license_salt_2024').digest('hex');
-}
 
 function slugify(str) {
   return str.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');

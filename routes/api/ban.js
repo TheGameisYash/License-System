@@ -4,12 +4,13 @@ const router = express.Router();
 
 const { getBanlistCached, logActivityBatched } = require('../../utils/optimization');
 const { validateHWID } = require('../../utils/validators');
+const { validateSoftwareAPIKey, simpleRateLimit } = require('../../middleware/apiValidation');
 
 // ============================================================================
 // GET /api/check-ban - Check if HWID is Banned
 // ============================================================================
 
-router.get('/', async (req, res) => {
+router.get('/', simpleRateLimit(30, 60000), validateSoftwareAPIKey, async (req, res) => {
   const { hwid } = req.query;
   
   try {

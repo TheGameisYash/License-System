@@ -1,6 +1,21 @@
 // utils/helpers.js
 const crypto = require('crypto');
 
+// ============================================================================
+// PASSWORD HASHING (centralized — used by register, validate, users, admin)
+// ============================================================================
+
+const PASSWORD_SALT = 'license_salt_2024';
+
+/**
+ * Hash a password with SHA-256 + static salt.
+ * @param {string} password — plaintext password
+ * @returns {string} hex digest
+ */
+function hashPassword(password) {
+  return crypto.createHash('sha256').update(password + PASSWORD_SALT).digest('hex');
+}
+
 function generateSecureLicenseKey(prefix = 'LIC') {
   const segments = [];
   for (let i = 0; i < 3; i++) {
@@ -37,6 +52,7 @@ function isLicenseExpired(license) {
 }
 
 module.exports = {
+  hashPassword,
   generateSecureLicenseKey,
   formatTimeAgo,
   calculateDaysUntilExpiry,

@@ -43,7 +43,7 @@ function validateHWIDMiddleware(req, res, next) {
     return res.status(400).json({
       success: false,
       code: 'INVALID_HWID',
-      message: 'Invalid HWID format. HWID must be alphanumeric.',
+      message: 'Invalid HWID format. HWID must be between 10 and 256 characters.',
       data: null
     });
   }

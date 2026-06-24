@@ -3,7 +3,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const rateLimit = require('express-rate-limit');
-const { getFirestore } = require('firebase-admin/firestore');
+const { getDb } = require('../config/firebase');
 const router = express.Router();
 
 const JWT_SECRET = process.env.PCREMOTE_JWT_SECRET || process.env.SESSION_SECRET;
@@ -17,7 +17,7 @@ const limiter = rateLimit({
 });
 
 // ── Helper: get users collection ─────────────────────────
-const usersCol = () => getFirestore().collection('pcremote_users');
+const usersCol = () => getDb().collection('pcremote_users');
 
 // ── REGISTER ──────────────────────────────────────────────
 // POST /pcremote/auth/register

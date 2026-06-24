@@ -59,10 +59,7 @@ async function saveLicenseAndInvalidateCache(licenseKey, licenseData) {
 // SOFTWARE CACHING (30 min TTL, invalidated on admin save)
 // ============================================================================
 
-// Per-software cache: Map<softwareId, {data, expiry}>
-if (!cache.softwareCache) cache.softwareCache = new Map();
-if (!cache.allSoftwareCache) cache.allSoftwareCache = null;
-if (!cache.allSoftwareCacheExpiry) cache.allSoftwareCacheExpiry = 0;
+// Per-software cache is initialized in cache.js
 
 async function getSoftwareCached(softwareId) {
   const cached = cache.softwareCache.get(softwareId);
@@ -99,7 +96,7 @@ function invalidateSoftwareCache(softwareId) {
 // ANNOUNCEMENTS CACHING (10 min TTL per software)
 // ============================================================================
 
-if (!cache.announcementsCache) cache.announcementsCache = new Map();
+// Announcements cache is initialized in cache.js
 
 async function getAnnouncementsCached(softwareId) {
   const cached = cache.announcementsCache.get(softwareId);

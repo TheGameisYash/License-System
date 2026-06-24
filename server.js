@@ -39,9 +39,10 @@ app.use(session({
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: false,
+    secure: process.env.NODE_ENV === 'production',
     httpOnly: true,
-    maxAge: 24 * 60 * 60 * 1000
+    maxAge: 24 * 60 * 60 * 1000,
+    sameSite: 'lax'
   }
 }));
 
@@ -68,6 +69,20 @@ app.use((req, res) => {
     success: false,
     code: 'NOT_FOUND',
     message: 'Endpoint not found',
+    data: null
+  });
+});
+
+// Global error handler — catches unhandled errors from any middleware/route
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, _next) => {
+  console.error('Unhandled error:', err.stack || err.message || err);
+  res.status(err.status || 500).json({
+    success: false,
+    code: 'INTERNAL_ERROR',
+    message: process.env.NODE_ENV === 'production'
+      ? 'An unexpected error occurred'
+      : err.message || 'Internal server error',
     data: null
   });
 });

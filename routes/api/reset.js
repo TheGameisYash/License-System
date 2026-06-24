@@ -10,12 +10,13 @@ const {
 const { validateHWID, sanitizeInput } = require('../../utils/validators');
 const { sendWebhook } = require('../../utils/webhook');
 const { getDb } = require('../../config/firebase');
+const { validateSoftwareAPIKey } = require('../../middleware/apiValidation');
 
 // ============================================================================
 // POST /api/request-hwid-reset - Request HWID Reset
 // ============================================================================
 
-router.post('/', async (req, res) => {
+router.post('/request-hwid-reset', validateSoftwareAPIKey, async (req, res) => {
   const { license, hwid, reason } = req.body;
   
   try {
@@ -89,22 +90,24 @@ router.post('/', async (req, res) => {
       });
     }
     
-    // ==================== DUPLICATE REQUEST CHECK ====================
+    // ==================== DUPLICATE & RATE LIMIT CHECKS (IN-MEMORY FILTERING) ====================
     
     const db = getDb();
-    const existingRequest = await db.collection('reset_requests')
+    const licenseRequestsSnapshot = await db.collection('reset_requests')
       .where('license', '==', license)
-      .where('status', '==', 'pending')
       .get();
+      
+    // 1. Check if a pending request already exists
+    const pendingRequest = licenseRequestsSnapshot.docs.find(doc => doc.data().status === 'pending');
     
-    if (!existingRequest.empty) {
-      const existingData = existingRequest.docs[0].data();
+    if (pendingRequest) {
+      const existingData = pendingRequest.data();
       return res.status(409).json({
         success: false,
         code: 'REQUEST_ALREADY_EXISTS',
         message: 'A pending reset request already exists for this license',
         data: {
-          requestId: existingRequest.docs[0].id,
+          requestId: pendingRequest.id,
           submittedAt: existingData.requestedAt,
           reason: existingData.reason,
           note: 'Please wait for admin approval or contact support'
@@ -112,16 +115,15 @@ router.post('/', async (req, res) => {
       });
     }
     
-    // Check for recently denied requests (within 24 hours)
+    // 2. Check for recently denied requests (within 24 hours)
     const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const recentDenied = await db.collection('reset_requests')
-      .where('license', '==', license)
-      .where('status', '==', 'denied')
-      .where('processedAt', '>', oneDayAgo)
-      .get();
+    const recentDenied = licenseRequestsSnapshot.docs.filter(doc => {
+      const data = doc.data();
+      return data.status === 'denied' && data.processedAt && data.processedAt > oneDayAgo;
+    });
     
-    if (!recentDenied.empty) {
-      const deniedData = recentDenied.docs[0].data();
+    if (recentDenied.length > 0) {
+      const deniedData = recentDenied[0].data();
       return res.status(429).json({
         success: false,
         code: 'REQUEST_RECENTLY_DENIED',
@@ -136,14 +138,14 @@ router.post('/', async (req, res) => {
     
     // ==================== RATE LIMITING ====================
     
-    // Check for spam (more than 3 requests in 1 hour)
+    // 3. Check for spam (more than 3 requests in 1 hour)
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-    const recentRequests = await db.collection('reset_requests')
-      .where('license', '==', license)
-      .where('requestedAt', '>', oneHourAgo)
-      .get();
+    const recentRequests = licenseRequestsSnapshot.docs.filter(doc => {
+      const data = doc.data();
+      return data.requestedAt && data.requestedAt > oneHourAgo;
+    });
     
-    if (recentRequests.size >= 3) {
+    if (recentRequests.length >= 3) {
       return res.status(429).json({
         success: false,
         code: 'TOO_MANY_REQUESTS',
@@ -238,7 +240,7 @@ router.post('/', async (req, res) => {
 // GET /api/check-request-status - Check Reset Request Status
 // ============================================================================
 
-router.get('/status', async (req, res) => {
+router.get('/check-request-status', validateSoftwareAPIKey, async (req, res) => {
   const { license } = req.query;
   
   try {
@@ -254,8 +256,6 @@ router.get('/status', async (req, res) => {
     const db = getDb();
     const requestSnapshot = await db.collection('reset_requests')
       .where('license', '==', license)
-      .orderBy('requestedAt', 'desc')
-      .limit(1)
       .get();
     
     if (requestSnapshot.empty) {
@@ -267,8 +267,12 @@ router.get('/status', async (req, res) => {
       });
     }
     
-    const requestData = requestSnapshot.docs[0].data();
-    const requestId = requestSnapshot.docs[0].id;
+    const sortedRequests = requestSnapshot.docs
+      .map(doc => ({ id: doc.id, ...doc.data() }))
+      .sort((a, b) => (b.requestedAt || '').localeCompare(a.requestedAt || ''));
+      
+    const requestData = sortedRequests[0];
+    const requestId = requestData.id;
     
     return res.json({
       success: true,

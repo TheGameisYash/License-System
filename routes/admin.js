@@ -6,6 +6,7 @@ const { getDb } = require('../config/firebase');
 const { generateDashboard, generateRequestManagementPage } = require('../views/dashboard');
 const { generateSoftwarePage } = require('../views/software_page');
 const { generateAnnouncementsPage } = require('../views/announcements_page');
+const { requireLogin } = require('../middleware/auth');
 
 const {
   getLicense, saveLicense, deleteLicense,
@@ -34,10 +35,7 @@ const cache = require('../utils/cache');
 // AUTH MIDDLEWARE
 // ============================================================================
 
-router.use((req, res, next) => {
-  if (req.session && req.session.user) return next();
-  res.redirect('/auth/login');
-});
+router.use(requireLogin);
 
 // ============================================================================
 // HELPERS
@@ -118,7 +116,7 @@ router.post('/approve-reset-request', async (req, res) => {
     const requestDoc = await db.collection('reset_requests').doc(requestId).get();
     if (!requestDoc.exists) return res.send('<script>alert("Request not found!");window.location="/admin/reset-requests";</script>');
     const requestData = requestDoc.data();
-    const { license, fullHwid: hwid } = requestData;
+    const { license, fullCurrentHwid: hwid } = requestData;
     const lic = await getLicense(license);
     if (lic && lic.hwid) {
       const updatedLic = {
@@ -170,11 +168,23 @@ router.post('/generate-license', async (req, res) => {
     if (existing) return res.send('<script>alert("License already exists!");window.location="/admin";</script>');
     const expiry = req.body.expiry ? new Date(req.body.expiry).toISOString() : null;
     const softwareId = sanitizeInput(req.body.softwareId) || 'default';
+    const customerName = sanitizeInput(req.body.customerName) || '';
+    const customerEmail = sanitizeInput(req.body.customerEmail) || '';
+    let metadataStr = req.body.metadata ? req.body.metadata.trim() : '';
+    let metadata = null;
+    if (metadataStr) {
+      try {
+        metadata = JSON.parse(metadataStr);
+      } catch (e) {
+        metadata = metadataStr;
+      }
+    }
     const licenseData = {
       hwid: '', deviceName: '', deviceInfo: '', activatedAt: '', userId: '',
       expiry, history: [], notes: [], banned: false,
       createdAt: new Date().toISOString(), createdBy: req.session.user,
-      type: 'standard', softwareId
+      type: 'standard', softwareId,
+      customerName, customerEmail, metadata
     };
     await saveLicense(license, licenseData);
     await logActivityBatched('LICENSE_GENERATED', `License: ${license}, Software: ${softwareId}`, req.ip, req.get('User-Agent'));
@@ -435,9 +445,12 @@ router.post('/software/create', async (req, res) => {
     const name = sanitizeInput(req.body.name);
     if (!name) return res.send('<script>alert("Name required!");window.location="/admin/software";</script>');
     const id = slugify(name) + '-' + Date.now().toString(36);
+    const cryptoSecret = require('crypto');
+    const apiKey = 'SDK_' + cryptoSecret.randomBytes(16).toString('hex').toUpperCase();
     const softwareData = {
       name,
       slug: slugify(name),
+      apiKey,
       description: sanitizeInput(req.body.description) || '',
       icon: sanitizeInput(req.body.icon) || '🔧',
       color: req.body.color || '#00aaee',
@@ -472,8 +485,15 @@ router.post('/software/create', async (req, res) => {
 router.get('/software/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const [software, db] = [await getSoftware(id), getDb()];
+    let software = await getSoftware(id);
     if (!software) return res.send('<script>alert("Software not found!");window.location="/admin/software";</script>');
+    if (!software.apiKey) {
+      const cryptoSecret = require('crypto');
+      software.apiKey = 'SDK_' + cryptoSecret.randomBytes(16).toString('hex').toUpperCase();
+      await saveSoftware(id, { apiKey: software.apiKey });
+      invalidateSoftwareCache(id);
+    }
+    const db = getDb();
     const licensesSnapshot = await db.collection('licenses').where('softwareId', '==', id).get();
     const licenses = {};
     licensesSnapshot.forEach(doc => { licenses[doc.id] = doc.data(); });

@@ -18,7 +18,7 @@ const { sanitizeInput } = require('../../utils/validators');
 const { isLicenseExpired } = require('../../utils/helpers');
 const { sendWebhook } = require('../../utils/webhook');
 const { getSoftwareUser } = require('../../utils/database');
-const { checkAPIEnabled, validateHWIDMiddleware, validateLicenseKey, checkHWIDBanned, simpleRateLimit } = require('../../middleware/apiValidation');
+const { checkAPIEnabled, validateHWIDMiddleware, validateLicenseKey, checkHWIDBanned, simpleRateLimit, validateSoftwareAPIKey } = require('../../middleware/apiValidation');
 
 function hashPassword(p) {
   return crypto.createHash('sha256').update(p + 'license_salt_2024').digest('hex');
@@ -29,6 +29,7 @@ router.post('/',
   simpleRateLimit(5, 60000),
   validateLicenseKey,
   checkAPIEnabled,
+  validateSoftwareAPIKey,
   async (req, res) => {
     const { license, hwid, device_info, device_name, software_id, user_id, username, password } = req.body;
     const softwareId = software_id || 'default';
@@ -43,6 +44,17 @@ router.post('/',
       if (!sw.apiEnabled) {
         return res.status(503).json({ success: false, code: 'API_DISABLED', message: 'API is disabled for this software', data: null });
       }
+
+      // Override res.json to sign response
+      const originalJson = res.json;
+      res.json = function (body) {
+        if (sw && sw.apiKey) {
+          const signature = crypto.createHmac('sha256', sw.apiKey).update(JSON.stringify(body)).digest('hex');
+          res.setHeader('X-Response-Signature', signature);
+        }
+        return originalJson.call(this, body);
+      };
+
       if (sw.maintenanceMode) {
         return res.status(503).json({ success: false, code: 'MAINTENANCE_MODE', message: sw.maintenanceMessage || 'Software under maintenance', data: null });
       }
@@ -115,7 +127,7 @@ router.post('/',
         const announcements = await getAnnouncementsCached(softwareId);
         return res.status(200).json({
           success: true, code: 'ALREADY_REGISTERED', message: 'Device already registered. Re-validation successful.',
-          data: { license, hwid: effectiveHwid.substring(0, 20) + '...', deviceName: lic.deviceName, registeredAt: lic.activatedAt, expiry: lic.expiry },
+          data: { license, hwid: effectiveHwid.substring(0, 20) + '...', deviceName: lic.deviceName, registeredAt: lic.activatedAt, expiry: lic.expiry, metadata: lic.metadata || null },
           announcements, software: { name: sw.name }
         });
       }
@@ -140,6 +152,11 @@ router.post('/',
         userId: effectiveUserId || lic.userId || '',
         softwareId: lic.softwareId || softwareId,
         registrationIP: req.ip,
+        hardwareFingerprint: {
+          cpu: sanitizeInput(req.body.cpu_info) || null,
+          gpu: sanitizeInput(req.body.gpu_info) || null,
+          motherboard: sanitizeInput(req.body.motherboard_uuid) || null
+        },
         history: [...(lic.history || []), { action: 'DEVICE_REGISTERED', date: new Date().toISOString(), details: `Device: ${sanitizedName}`, ip: req.ip }]
       };
 
@@ -155,7 +172,7 @@ router.post('/',
 
       return res.status(201).json({
         success: true, code: 'DEVICE_REGISTERED', message: 'Device registered successfully',
-        data: { license, hwid: effectiveHwid ? effectiveHwid.substring(0, 20) + '...' : undefined, deviceName: sanitizedName, registeredAt: updatedLic.activatedAt, expiry: updatedLic.expiry },
+        data: { license, hwid: effectiveHwid ? effectiveHwid.substring(0, 20) + '...' : undefined, deviceName: sanitizedName, registeredAt: updatedLic.activatedAt, expiry: updatedLic.expiry, metadata: updatedLic.metadata || null },
         announcements,
         software: sw.versionCheck ? { name: sw.name, latestVersion: sw.latestVersion, downloadUrl: sw.downloadUrl } : { name: sw.name }
       });

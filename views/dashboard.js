@@ -116,7 +116,8 @@ function generateRequestManagementPage(pendingRequests, processedRequests) {
                         <span style="padding: 4px 12px; border-radius: 15px; font-size: 11px; background: rgba(255, 165, 2, 0.2); color: #ffa502;">PENDING</span>
                     </div>
                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-bottom: 15px; font-size: 13px;">
-                        <div><div style="color: #8b8d94; font-size: 11px; margin-bottom: 4px;">HWID</div>${req.hwid}</div>
+                        <div><div style="color: #8b8d94; font-size: 11px; margin-bottom: 4px;">CURRENT HWID</div><span style="font-family:monospace; font-size:11px;">${req.currentHwid || 'Not registered'}</span></div>
+                        <div><div style="color: #8b8d94; font-size: 11px; margin-bottom: 4px;">REQUESTING HWID</div><span style="font-family:monospace; font-size:11px;">${req.requestingHwid || 'Unknown'}</span></div>
                         <div><div style="color: #8b8d94; font-size: 11px; margin-bottom: 4px;">REQUESTED</div>${new Date(req.requestedAt).toLocaleString()}</div>
                         <div><div style="color: #8b8d94; font-size: 11px; margin-bottom: 4px;">REASON</div>${req.reason}</div>
                         <div><div style="color: #8b8d94; font-size: 11px; margin-bottom: 4px;">IP</div>${req.ip}</div>

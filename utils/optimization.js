@@ -169,6 +169,7 @@ async function logActivityBatched(action, details, ip, userAgent, license = null
     date: new Date().toISOString()
   });
   if (
+    process.env.VERCEL ||
     cache.activityLogBatch.length >= CONFIG.ACTIVITY_BATCH_SIZE ||
     (Date.now() - cache.lastFlush) > CONFIG.ACTIVITY_FLUSH_INTERVAL
   ) {

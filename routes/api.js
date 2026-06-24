@@ -27,11 +27,8 @@ router.use('/validate', validateRoute);
 // License information
 router.use('/license-info', infoRoute);
 
-// HWID reset request
-router.use('/request-hwid-reset', resetRoute);
-
-// Check reset request status
-router.use('/check-request-status', resetRoute);
+// HWID reset request & check status
+router.use('/', resetRoute);
 
 // Ban check
 router.use('/check-ban', banRoute);

@@ -19,7 +19,11 @@ async function getLicense(licenseKey) {
 async function saveLicense(licenseKey, data) {
   try {
     const db = getDb();
-    await db.collection('licenses').doc(licenseKey).set(data, { merge: true });
+    const formattedData = { ...data };
+    if (data.customerName !== undefined) formattedData.customerName = data.customerName;
+    if (data.customerEmail !== undefined) formattedData.customerEmail = data.customerEmail;
+    if (data.metadata !== undefined) formattedData.metadata = data.metadata;
+    await db.collection('licenses').doc(licenseKey).set(formattedData, { merge: true });
     return true;
   } catch (error) {
     console.error('saveLicense error:', error);
@@ -121,7 +125,17 @@ async function getSoftware(softwareId) {
   try {
     const db = getDb();
     const doc = await db.collection('software').doc(softwareId).get();
-    return doc.exists ? { id: doc.id, ...doc.data() } : null;
+    if (doc.exists) {
+      const data = doc.data();
+      if (!data.apiKey) {
+        const crypto = require('crypto');
+        const apiKey = 'SDK_' + crypto.randomBytes(16).toString('hex').toUpperCase();
+        await saveSoftware(softwareId, { apiKey });
+        data.apiKey = apiKey;
+      }
+      return { id: doc.id, ...data };
+    }
+    return null;
   } catch (error) {
     console.error('getSoftware error:', error);
     return null;
@@ -132,7 +146,17 @@ async function getAllSoftware() {
   try {
     const db = getDb();
     const snapshot = await db.collection('software').get();
-    const results = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const results = [];
+    for (const doc of snapshot.docs) {
+      const data = doc.data();
+      if (!data.apiKey) {
+        const crypto = require('crypto');
+        const apiKey = 'SDK_' + crypto.randomBytes(16).toString('hex').toUpperCase();
+        await saveSoftware(doc.id, { apiKey });
+        data.apiKey = apiKey;
+      }
+      results.push({ id: doc.id, ...data });
+    }
     // Sort in-memory — no Firestore index needed
     return results.sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
   } catch (error) {
@@ -144,6 +168,13 @@ async function getAllSoftware() {
 async function saveSoftware(softwareId, data) {
   try {
     const db = getDb();
+    if (!data.apiKey) {
+      const doc = await db.collection('software').doc(softwareId).get();
+      if (!doc.exists || !doc.data().apiKey) {
+        const crypto = require('crypto');
+        data.apiKey = 'SDK_' + crypto.randomBytes(16).toString('hex').toUpperCase();
+      }
+    }
     await db.collection('software').doc(softwareId).set(data, { merge: true });
     return true;
   } catch (error) {

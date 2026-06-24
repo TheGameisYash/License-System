@@ -19,13 +19,14 @@ const { validateHWID } = require('../../utils/validators');
 const { calculateDaysUntilExpiry, isLicenseExpired } = require('../../utils/helpers');
 const { sendWebhook } = require('../../utils/webhook');
 const { getSoftwareUser } = require('../../utils/database');
+const { validateSoftwareAPIKey } = require('../../middleware/apiValidation');
 
 function hashPassword(password) {
   return crypto.createHash('sha256').update(password + 'license_salt_2024').digest('hex');
 }
 
 // GET /api/validate
-router.get('/', async (req, res) => {
+router.get('/', validateSoftwareAPIKey, async (req, res) => {
   const { license, hwid, software_id, user_id, username, password } = req.query;
   const startTime = Date.now();
 
@@ -49,6 +50,16 @@ router.get('/', async (req, res) => {
     if (!sw.apiEnabled) {
       return res.status(503).json({ success: false, code: 'API_DISABLED', message: 'API is currently disabled for this software', data: null });
     }
+
+    // Override res.json to sign response
+    const originalJson = res.json;
+    res.json = function (body) {
+      if (sw && sw.apiKey) {
+        const signature = crypto.createHmac('sha256', sw.apiKey).update(JSON.stringify(body)).digest('hex');
+        res.setHeader('X-Response-Signature', signature);
+      }
+      return originalJson.call(this, body);
+    };
 
     // ── Maintenance mode check
     if (sw.maintenanceMode) {
@@ -89,9 +100,18 @@ router.get('/', async (req, res) => {
     const cacheKey = needsHwid ? `${license}:${hwid}` : license;
     if (needsHwid && hwid && wasRecentlyValidated(license, hwid)) {
       const announcements = await getAnnouncementsCached(softwareId);
+      const lic = await getLicenseCached(license);
       return res.json({
         success: true, code: 'VALID_CACHED', message: 'License valid (cached)',
-        data: { license, hwid: hwid.substring(0, 20) + '...', cached: true, responseTime: `${Date.now() - startTime}ms` },
+        data: {
+          license,
+          hwid: hwid.substring(0, 20) + '...',
+          cached: true,
+          responseTime: `${Date.now() - startTime}ms`,
+          customerName: lic?.customerName || null,
+          customerEmail: lic?.customerEmail || null,
+          metadata: lic?.metadata || null
+        },
         announcements,
         software: sw.versionCheck ? { name: sw.name, latestVersion: sw.latestVersion, downloadUrl: sw.downloadUrl } : { name: sw.name }
       });
@@ -193,6 +213,9 @@ router.get('/', async (req, res) => {
         daysRemaining: calculateDaysUntilExpiry(lic.expiry) !== null ? calculateDaysUntilExpiry(lic.expiry) : 'Unlimited',
         lastValidated: new Date().toISOString(),
         validationCount: updatedLic.validationCount,
+        customerName: lic.customerName || null,
+        customerEmail: lic.customerEmail || null,
+        metadata: lic.metadata || null,
         cached: false,
         responseTime: `${responseTime}ms`
       },

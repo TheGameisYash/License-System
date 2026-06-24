@@ -50,6 +50,7 @@ const landingRoutes = require('./routes/landing');
 const apiRoutes = require('./routes/api');
 const adminRoutes = require('./routes/admin');
 const authRoutes = require('./routes/auth');
+const pcremoteAuthRoutes = require('./routes/pcremote-auth');
 
 
 
@@ -57,6 +58,7 @@ const authRoutes = require('./routes/auth');
 app.use('/auth', authRoutes);
 app.use('/api', apiRoutes);
 app.use('/admin', adminRoutes);
+app.use('/pcremote/auth', pcremoteAuthRoutes);
 app.use('/', landingRoutes);
 
 

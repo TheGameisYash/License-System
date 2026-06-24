@@ -140,10 +140,42 @@ setInterval(() => {
   }
 }, 300000);
 
+// Validate Software API Key
+async function validateSoftwareAPIKey(req, res, next) {
+  try {
+    const apiKey = req.headers['x-software-api-key'] || req.query.api_key || req.body.api_key;
+    const softwareId = req.body.software_id || req.query.software_id || req.params.id || 'default';
+    
+    const { getSoftwareCached } = require('../utils/optimization');
+    const sw = await getSoftwareCached(softwareId);
+    
+    if (sw && sw.apiKey) {
+      if (!apiKey || apiKey !== sw.apiKey) {
+        return res.status(401).json({
+          success: false,
+          code: 'INVALID_API_KEY',
+          message: 'Invalid or missing X-Software-API-Key authorization header',
+          data: null
+        });
+      }
+    }
+    next();
+  } catch (error) {
+    console.error('API Key validation error:', error);
+    return res.status(500).json({
+      success: false,
+      code: 'SERVER_ERROR',
+      message: 'Internal server error',
+      data: null
+    });
+  }
+}
+
 module.exports = {
   checkAPIEnabled,
   validateHWIDMiddleware,
   checkHWIDBanned,
   validateLicenseKey,
-  simpleRateLimit
+  simpleRateLimit,
+  validateSoftwareAPIKey
 };

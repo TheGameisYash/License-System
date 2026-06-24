@@ -1,503 +1,345 @@
-// views/landing.js
+// views/landing.js - Premium API Documentation Hub & Integration Center
 const { CONFIG } = require('../config/constants');
 
 const generateLandingPage = () => {
-    const endpoints = [
-        {
-            group: "License & Device",
-            items: [
-                {
-                    id: "api-register",
-                    method: "POST",
-                    path: "/api/register",
-                    description: "Register a new device to a license key. Validates the key, binds the HWID, and returns device details.",
-                    requestParams: [
-                        { name: "license", type: "string", required: true, desc: "The license key to register." },
-                        { name: "hwid", type: "string", required: true, desc: "Hardware ID of the device." },
-                        { name: "device_name", type: "string", required: false, desc: "Name of the device." },
-                        { name: "device_info", type: "string", required: false, desc: "Additional OS/system info." },
-                        { name: "software_id", type: "string", required: false, desc: "Target software ID (defaults to 'default')." }
-                    ],
-                    responseSuccess: "201 Created\n{\n  \"success\": true,\n  \"code\": \"DEVICE_REGISTERED\",\n  \"message\": \"Device registered successfully\",\n  \"data\": { ... }\n}"
-                },
-                {
-                    id: "api-validate",
-                    method: "GET",
-                    path: "/api/validate",
-                    description: "Validate a license and check HWID bindings. Cached for ultra-fast response times.",
-                    requestParams: [
-                        { name: "license", type: "string", required: true, desc: "The license key to validate." },
-                        { name: "hwid", type: "string", required: true, desc: "Hardware ID (if binding mode requires it)." },
-                        { name: "software_id", type: "string", required: false, desc: "Software ID for version and auth checks." },
-                        { name: "user_id", type: "string", required: false, desc: "User ID for user_id binding mode." }
-                    ],
-                    responseSuccess: "200 OK\n{\n  \"success\": true,\n  \"code\": \"VALID\",\n  \"message\": \"License is valid\",\n  \"data\": {\n    \"license\": \"XXX...\",\n    \"daysRemaining\": 30\n  }\n}"
-                },
-                {
-                    id: "api-info",
-                    method: "GET",
-                    path: "/api/license-info",
-                    description: "Get detailed read-only information about a specific license without validating.",
-                    requestParams: [
-                        { name: "license", type: "string", required: true, desc: "The license key to lookup." }
-                    ],
-                    responseSuccess: "200 OK\n{\n  \"success\": true,\n  \"data\": {\n    \"status\": \"Active\",\n    \"expiresAt\": \"2024-12-31T...\"\n  }\n}"
-                }
-            ]
-        },
-        {
-            group: "Account & Reset",
-            items: [
-                {
-                    id: "api-reset-request",
-                    method: "POST",
-                    path: "/api/request-hwid-reset",
-                    description: "Submit a request to admins to detach the current HWID from a license.",
-                    requestParams: [
-                        { name: "license", type: "string", required: true, desc: "The license key to reset." },
-                        { name: "hwid", type: "string", required: true, desc: "The CURRENT hardware ID requesting the reset." },
-                        { name: "reason", type: "string", required: false, desc: "Explanation for the reset request (max 500 chars)." }
-                    ],
-                    responseSuccess: "200 OK\n{\n  \"success\": true,\n  \"code\": \"REQUEST_SUBMITTED\",\n  \"data\": { \"requestId\": \"XYZ...\" }\n}"
-                },
-                {
-                    id: "api-reset-status",
-                    method: "GET",
-                    path: "/api/check-request-status",
-                    description: "Check the administrative review status of an existing HWID reset request.",
-                    requestParams: [
-                        { name: "license", type: "string", required: true, desc: "The license key associated with the request." }
-                    ],
-                    responseSuccess: "200 OK\n{\n  \"success\": true,\n  \"code\": \"REQUEST_FOUND\",\n  \"data\": { \"status\": \"pending|approved|denied\" }\n}"
-                },
-                {
-                    id: "api-ban-check",
-                    method: "GET",
-                    path: "/api/check-ban",
-                    description: "Quickly verify if a specific hardware ID is completely banned from the system.",
-                    requestParams: [
-                        { name: "hwid", type: "string", required: true, desc: "The Hardware ID to check." }
-                    ],
-                    responseSuccess: "200 OK\n{\n  \"success\": true,\n  \"code\": \"NOT_BANNED\",\n  \"data\": { \"isBanned\": false }\n}"
-                }
-            ]
-        },
-        {
-            group: "Software Users",
-            items: [
-                {
-                    id: "api-users-register",
-                    method: "POST",
-                    path: "/api/users/register",
-                    description: "Register a new software credentials account (for license_credentials auth mode).",
-                    requestParams: [
-                        { name: "username", type: "string", required: true, desc: "Desired username (alphanumeric, min 3 chars)." },
-                        { name: "password", type: "string", required: true, desc: "Account password (min 4 chars)." },
-                        { name: "email", type: "string", required: false, desc: "Optional recovery email." },
-                        { name: "software_id", type: "string", required: false, desc: "Software this account belongs to." }
-                    ],
-                    responseSuccess: "201 Created\n{\n  \"success\": true,\n  \"code\": \"USER_REGISTERED\",\n  \"message\": \"Account created successfully\"\n}"
-                },
-                {
-                    id: "api-users-login",
-                    method: "POST",
-                    path: "/api/users/login",
-                    description: "Authenticate a software user via credentials instead of purely by license key.",
-                    requestParams: [
-                        { name: "username", type: "string", required: true, desc: "Registered username." },
-                        { name: "password", type: "string", required: true, desc: "Account password." },
-                        { name: "software_id", type: "string", required: false, desc: "Associated software." }
-                    ],
-                    responseSuccess: "200 OK\n{\n  \"success\": true,\n  \"code\": \"LOGIN_OK\",\n  \"data\": { \"isPremium\": false }\n}"
-                }
-            ]
-        },
-        {
-            group: "Software & System",
-            items: [
-                {
-                    id: "api-software-version",
-                    method: "GET",
-                    path: "/api/software/:id/version",
-                    description: "Fetch the latest version info and download URL for a specific software id.",
-                    requestParams: [
-                        { name: "id", type: "string", required: true, desc: "Software ID (in path)." }
-                    ],
-                    responseSuccess: "200 OK\n{\n  \"success\": true,\n  \"data\": { \"latestVersion\": \"1.0.0\", \"downloadUrl\": \"...\" }\n}"
-                },
-                {
-                    id: "api-software-announcements",
-                    method: "GET",
-                    path: "/api/software/:id/announcements",
-                    description: "Fetch all active announcements to be displayed in the software client.",
-                    requestParams: [
-                        { name: "id", type: "string", required: true, desc: "Software ID (in path)." }
-                    ],
-                    responseSuccess: "200 OK\n{\n  \"success\": true,\n  \"data\": { \"announcements\": [...] }\n}"
-                },
-                {
-                    id: "api-health",
-                    method: "GET",
-                    path: "/api/health",
-                    description: "System health check. Returns uptime, active connections, and cache stats.",
-                    requestParams: [],
-                    responseSuccess: "200 OK\n{\n  \"success\": true,\n  \"data\": { \"status\": \"healthy\", \"uptime\": 12054 }\n}"
-                }
-            ]
-        },
-        {
-            group: "PCRemote Auth (JWT Mode)",
-            items: [
-                {
-                    id: "pc-auth-register",
-                    method: "POST",
-                    path: "/pcremote/auth/register",
-                    description: "Register a standalone PCRemote user with Email and Password, returns a JWT token.",
-                    requestParams: [
-                        { name: "email", type: "string", required: true, desc: "Valid email address." },
-                        { name: "password", type: "string", required: true, desc: "Secure password (min 8 chars)." }
-                    ],
-                    responseSuccess: "201 Created\n{\n  \"success\": true,\n  \"token\": \"eyJhbGci...\",\n  \"isPremium\": false,\n  \"email\": \"user@example.com\"\n}"
-                },
-                {
-                    id: "pc-auth-login",
-                    method: "POST",
-                    path: "/pcremote/auth/login",
-                    description: "Login an existing PCRemote user and obtain a JWT.",
-                    requestParams: [
-                        { name: "email", type: "string", required: true, desc: "Registered email address." },
-                        { name: "password", type: "string", required: true, desc: "Account password." }
-                    ],
-                    responseSuccess: "200 OK\n{\n  \"success\": true,\n  \"token\": \"eyJhbGci...\",\n  \"isPremium\": false\n}"
-                },
-                {
-                    id: "pc-auth-verify",
-                    method: "GET",
-                    path: "/pcremote/auth/verify",
-                    description: "Verify a user's JWT token header to check if their session and premium status are intact.",
-                    requestParams: [
-                        { name: "Authorization", type: "header", required: true, desc: "Bearer token format: 'Bearer <jwt>'." }
-                    ],
-                    responseSuccess: "200 OK\n{\n  \"success\": true,\n  \"isPremium\": true,\n  \"email\": \"user@example.com\"\n}"
-                },
-                {
-                    id: "pc-auth-change-pw",
-                    method: "POST",
-                    path: "/pcremote/auth/change-password",
-                    description: "Change the password for the currently authenticated PCRemote user.",
-                    requestParams: [
-                        { name: "Authorization", type: "header", required: true, desc: "Bearer token in headers." },
-                        { name: "oldPassword", type: "string", required: true, desc: "Current password." },
-                        { name: "newPassword", type: "string", required: true, desc: "New password (min 8 chars)." }
-                    ],
-                    responseSuccess: "200 OK\n{\n  \"success\": true,\n  \"message\": \"Password updated\"\n}"
-                },
-                {
-                    id: "pc-auth-delete",
-                    method: "DELETE",
-                    path: "/pcremote/auth/delete",
-                    description: "Permanently delete the authenticated PCRemote account from the database.",
-                    requestParams: [
-                        { name: "Authorization", type: "header", required: true, desc: "Bearer token in headers." }
-                    ],
-                    responseSuccess: "200 OK\n{\n  \"success\": true,\n  \"message\": \"Account deleted\"\n}"
-                }
-            ]
-        }
-    ];
-
-    // Helper template strings
-    const compileNavLinks = () => {
-        return endpoints.map(group => `
-      <div class="mb-6">
-        <h5 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3 px-3">${group.group}</h5>
-        <ul class="space-y-1">
-          ${group.items.map(item => `
-            <li>
-              <a href="#${item.id}" class="flex items-center px-3 py-2 text-sm text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg group transition-colors">
-                <span class="${item.method === 'GET' ? 'text-blue-400' : item.method === 'POST' ? 'text-green-400' : item.method === 'DELETE' ? 'text-red-400' : 'text-purple-400'} font-mono text-xs w-12 group-hover:drop-shadow-glow">${item.method}</span>
-                <span class="truncate">${item.path}</span>
-              </a>
-            </li>
-          `).join('')}
-        </ul>
-      </div>
-    `).join('');
-    };
-
-    const compileEndpoints = () => {
-        return endpoints.map(group => `
-      <div class="mb-12">
-        <div class="flex items-center gap-4 mb-6">
-          <h2 class="text-2xl font-bold text-white">${group.group}</h2>
-          <div class="h-px bg-slate-700 flex-1"></div>
-        </div>
-        <div class="space-y-10">
-          ${group.items.map(item => `
-            <div id="${item.id}" class="scroll-mt-24 glass-panel rounded-2xl border border-white/10 p-6 md:p-8">
-              <div class="flex flex-col md:flex-row md:items-center gap-4 mb-4">
-                <div class="flex items-center gap-3 bg-black/40 px-4 py-2 rounded-lg border border-white/5 w-fit">
-                  <span class="${item.method === 'GET' ? 'text-blue-400' : item.method === 'POST' ? 'text-green-400' : item.method === 'DELETE' ? 'text-red-400' : 'text-purple-400'} font-bold text-sm tracking-wide">${item.method}</span>
-                  <div class="w-px h-4 bg-white/10"></div>
-                  <code class="text-slate-200 font-mono text-sm">${item.path}</code>
-                </div>
-              </div>
-              
-              <p class="text-slate-400 mb-6 leading-relaxed text-sm">${item.description}</p>
-              
-              <div class="grid md:grid-cols-2 gap-8">
-                <!-- Parameters -->
-                <div>
-                  <h4 class="text-sm font-semibold text-white mb-3 flex items-center gap-2">
-                    <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                    Parameters
-                  </h4>
-                  ${item.requestParams.length > 0 ? `
-                    <div class="bg-black/30 rounded-xl border border-white/5 overflow-hidden">
-                      <table class="w-full text-left text-sm">
-                        <thead class="bg-white/5 border-b border-white/5">
-                          <tr>
-                            <th class="px-4 py-2 text-slate-400 font-medium">Name</th>
-                            <th class="px-4 py-2 text-slate-400 font-medium">Type</th>
-                            <th class="px-4 py-2 text-slate-400 font-medium leading-none text-right">Req</th>
-                          </tr>
-                        </thead>
-                        <tbody class="divide-y divide-white/5">
-                          ${item.requestParams.map(param => `
-                            <tr class="hover:bg-white/[0.02] transition-colors">
-                              <td class="px-4 py-3">
-                                <span class="font-mono text-indigo-300">${param.name}</span>
-                                <div class="text-xs text-slate-500 mt-1">${param.desc}</div>
-                              </td>
-                              <td class="px-4 py-3 text-slate-400 font-mono text-xs">${param.type}</td>
-                              <td class="px-4 py-3 text-right">
-                                ${param.required
-                ? '<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-red-400/10 text-red-400 border border-red-400/20">YES</span>'
-                : '<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-400/10 text-slate-400 border border-slate-400/20">NO</span>'}
-                              </td>
-                            </tr>
-                          `).join('')}
-                        </tbody>
-                      </table>
-                    </div>
-                  ` : `
-                    <div class="bg-black/30 rounded-xl border border-white/5 p-4 text-sm text-slate-500 italic">No parameters required.</div>
-                  `}
-                </div>
-
-                <!-- Responses -->
-                <div>
-                  <h4 class="text-sm font-semibold text-white mb-3 flex items-center gap-2">
-                    <svg class="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
-                    Success Response
-                  </h4>
-                  <div class="bg-[#0f111a] rounded-xl border border-white/5 overflow-hidden relative group h-full">
-                    <button class="absolute top-2 right-2 p-1.5 bg-white/5 hover:bg-white/10 rounded-md text-slate-400 opacity-0 group-hover:opacity-100 transition-all z-10 copy-btn">
-                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
-                    </button>
-                    <pre class="p-4 text-xs font-mono text-blue-300 overflow-x-auto m-0"><code>${item.responseSuccess}</code></pre>
-                  </div>
-                </div>
-              </div>
-            </div>
-          `).join('')}
-        </div>
-      </div>
-    `).join('');
-    };
-
-
     return `<!DOCTYPE html>
-<html lang="en" class="scroll-smooth bg-[#09090b] text-slate-300 antialiased">
+<html lang="en" class="scroll-smooth bg-[#06080f] text-slate-300 antialiased">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>API Documentation | License System</title>
+    <title>Integration & API Documentation | License System</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        body { font-family: 'Inter', sans-serif; }
+        body { font-family: 'Outfit', sans-serif; }
         code, pre { font-family: 'JetBrains Mono', monospace; }
         
         .glass-panel {
-            background: linear-gradient(145deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.01) 100%);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            box-shadow: 0 4px 24px -1px rgba(0,0,0,0.2);
+            background: rgba(13, 18, 30, 0.45);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
         }
 
-        .neon-glow {
+        .ambient-glow {
             position: absolute;
-            width: 600px;
-            height: 600px;
-            background: radial-gradient(circle, rgba(99,102,241,0.15) 0%, rgba(0,0,0,0) 70%);
-            top: -300px;
+            width: 800px;
+            height: 500px;
+            background: radial-gradient(circle, rgba(99, 102, 241, 0.08) 0%, rgba(0,0,0,0) 80%);
+            top: -200px;
             right: -200px;
             z-index: -1;
-            border-radius: 50%;
-            pointer-events: none;
-        }
-
-        .neon-glow-2 {
-            position: absolute;
-            width: 500px;
-            height: 500px;
-            background: radial-gradient(circle, rgba(168,85,247,0.1) 0%, rgba(0,0,0,0) 70%);
-            bottom: 10%;
-            left: -200px;
-            z-index: -1;
-            border-radius: 50%;
             pointer-events: none;
         }
 
         /* Custom Scrollbar */
-        ::-webkit-scrollbar { width: 8px; height: 8px; }
-        ::-webkit-scrollbar-track { background: #09090b; }
-        ::-webkit-scrollbar-thumb { background: #27272a; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: #3f3f46; }
-
-        .drop-shadow-glow { filter: drop-shadow(0 0 8px currentColor); }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #06080f; }
+        ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #334155; }
         
-        .nav-link.active {
-            color: #fff;
-            background: rgba(255,255,255,0.05);
-            border-left: 2px solid #6366f1;
+        .tab-btn.active {
+            color: #818cf8;
+            border-bottom: 2px solid #6366f1;
+            background: rgba(99, 102, 241, 0.03);
         }
     </style>
 </head>
-<body class="selection:bg-indigo-500/30 selection:text-indigo-200">
-    <div class="neon-glow"></div>
-    <div class="neon-glow-2"></div>
+<body class="selection:bg-indigo-500/30 selection:text-indigo-200 min-h-screen relative overflow-x-hidden">
+    <div class="ambient-glow"></div>
 
-    <!-- Header -->
-    <header class="fixed top-0 left-0 right-0 h-16 glass-panel border-b border-white/5 z-50 px-4 md:px-8 flex items-center justify-between">
+    <!-- Header Navigation -->
+    <header class="fixed top-0 left-0 right-0 h-16 glass-panel border-b border-white/5 z-50 px-6 md:px-12 flex items-center justify-between">
         <div class="flex items-center gap-3">
             <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold shadow-lg shadow-indigo-500/20">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+                🔐
             </div>
-            <span class="text-white font-semibold tracking-tight text-lg hidden sm:block">Ultra License API</span>
-            <span class="px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[10px] font-mono font-bold ml-2">v${CONFIG?.API_VERSION || '2.0.0'}</span>
+            <span class="text-white font-bold tracking-tight text-lg">Ultra License Hub</span>
+            <span class="px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[10px] font-mono font-bold ml-2">v${CONFIG.API_VERSION}</span>
         </div>
         <div class="flex items-center gap-4">
-            <a href="/admin" class="text-sm font-medium text-slate-300 hover:text-white transition-colors">Admin Panel</a>
-            <a href="https://github.com/TheGameisYash/License-System" target="_blank" class="px-4 py-1.5 rounded-full bg-white text-black font-medium text-sm hover:bg-slate-200 transition-colors shadow-[0_0_15px_rgba(255,255,255,0.3)]">GitHub</a>
+            <a href="/admin" class="text-sm font-medium text-slate-300 hover:text-white transition-colors">🔐 Admin Dashboard</a>
         </div>
     </header>
 
-    <div class="flex pt-16 min-h-screen">
-        <!-- Sidebar Navigation -->
-        <aside class="w-64 fixed hidden lg:block inset-y-0 pt-24 pb-8 h-screen border-r border-white/5 overflow-y-auto z-40">
-            ${compileNavLinks()}
-        </aside>
-
-        <!-- Main Content -->
-        <main class="flex-1 lg:pl-64 flex flex-col min-h-screen">
-            <div class="max-w-4xl mx-auto px-4 sm:px-6 md:px-8 flex-1 pt-12 pb-24 w-full">
-                
-                <!-- Hero Section -->
-                <div class="mb-16">
-                    <h1 class="text-4xl md:text-5xl font-bold text-white mb-4 tracking-tight">API Documentation</h1>
-                    <p class="text-lg text-slate-400 leading-relaxed mb-8 max-w-2xl">
-                        The fully modular, ultra-optimized REST API for your software licensing needs. Integrates seamlessly with your frontend, game engine, or desktop app. Supports Hardware Binding, Credentials Auth, JWTs, and Webhooks.
-                    </p>
-                    
-                    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                        <div class="glass-panel p-4 rounded-2xl border border-white/5 flex flex-col items-center justify-center text-center group">
-                            <div class="text-emerald-400 mb-2 group-hover:drop-shadow-glow transition-all">
-                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
-                            </div>
-                            <div class="text-sm font-medium text-white">Ultra Fast</div>
-                            <div class="text-xs text-slate-500 mt-1">~50ms Cached Validations</div>
-                        </div>
-                        <div class="glass-panel p-4 rounded-2xl border border-white/5 flex flex-col items-center justify-center text-center group">
-                            <div class="text-blue-400 mb-2 group-hover:drop-shadow-glow transition-all">
-                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
-                            </div>
-                            <div class="text-sm font-medium text-white">Highly Secure</div>
-                            <div class="text-xs text-slate-500 mt-1">HWID Binding & Crypto</div>
-                        </div>
-                        <div class="glass-panel p-4 rounded-2xl border border-white/5 flex flex-col items-center justify-center text-center group">
-                            <div class="text-indigo-400 mb-2 group-hover:drop-shadow-glow transition-all">
-                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
-                            </div>
-                            <div class="text-sm font-medium text-white">Database</div>
-                            <div class="text-xs text-slate-500 mt-1">Firestore Integration</div>
-                        </div>
-                        <div class="glass-panel p-4 rounded-2xl border border-white/5 flex flex-col items-center justify-center text-center group">
-                            <div class="text-purple-400 mb-2 group-hover:drop-shadow-glow transition-all">
-                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                            </div>
-                            <div class="text-sm font-medium text-white">RESTful</div>
-                            <div class="text-xs text-slate-500 mt-1">Easy to understand APIs</div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- API Base URL Info -->
-                <div class="mb-12 glass-panel p-6 rounded-2xl border border-indigo-500/20 bg-indigo-500/5">
-                    <h3 class="text-sm font-semibold text-indigo-400 uppercase tracking-wider mb-2">Base URL</h3>
-                    <div class="flex items-center gap-3">
-                        <code class="flex-1 text-white font-mono bg-black/40 px-4 py-3 rounded-lg border border-white/5 text-sm" id="base-url">https://your-domain.com</code>
-                        <button onclick="navigator.clipboard.writeText(window.location.origin); alert('Copied base URL!')" class="p-3 bg-white/5 hover:bg-white/10 rounded-lg text-slate-300 transition-colors border border-white/5 tooltip" title="Copy Base URL">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
-                        </button>
-                    </div>
-                    <p class="text-xs text-slate-500 mt-3">All API requests should be sent to this base address. Do not include trailing slashes. All responses return JSON datasets and contain a generic \`success\` boolean indicator parameter to easily distinguish between accepted and rejected logic states.</p>
-                </div>
-
-                <!-- Endpoints Container -->
-                ${compileEndpoints()}
-                
+    <div class="max-w-7xl mx-auto px-6 md:px-12 pt-28 pb-24 grid lg:grid-cols-12 gap-12">
+        <!-- Documentation Content -->
+        <main class="lg:col-span-7 space-y-12">
+            <div>
+                <h1 class="text-4xl md:text-5xl font-extrabold text-white tracking-tight mb-4">API Documentation</h1>
+                <p class="text-lg text-slate-400 leading-relaxed max-w-xl">
+                    Secure, ultra-optimized REST endpoints supporting Hardware Fingerprinting, Custom Configuration Metadata payloads, and HMAC-SHA256 Response integrity signing.
+                </p>
             </div>
-            
-            <!-- Footer -->
-            <footer class="mt-auto py-8 border-t border-white/5 text-center text-sm text-slate-500 flex flex-col items-center gap-2">
-                <p>&copy; ${new Date().getFullYear()} Ultra License System. All rights reserved.</p>
-                <p>Designed for unparalleled security and exceptional performance.</p>
-            </footer>
+
+            <!-- API Key Warning -->
+            <div class="glass-panel p-6 rounded-2xl border-indigo-500/20 bg-indigo-500/5 space-y-2">
+                <h3 class="text-sm font-bold text-indigo-400 uppercase tracking-wider flex items-center gap-2">🔑 API Key Authentication</h3>
+                <p class="text-sm text-slate-300 leading-relaxed">
+                    All API queries request authentication using the Software Product SDK Key. Send this secret value inside the request header as <code class="text-indigo-300 font-semibold bg-indigo-950/40 px-1.5 py-0.5 rounded">X-Software-API-Key</code>.
+                </p>
+            </div>
+
+            <!-- Anti-Crack Signing Section -->
+            <div class="glass-panel p-6 rounded-2xl border-emerald-500/20 bg-emerald-500/5 space-y-2">
+                <h3 class="text-sm font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-2">🛡️ Response Integrity Verification</h3>
+                <p class="text-sm text-slate-300 leading-relaxed">
+                    To prevent local proxy cracks (e.g. host redirects via Fiddler/Charles), validation responses include an <code class="text-emerald-300 font-semibold bg-emerald-950/40 px-1.5 py-0.5 rounded">X-Response-Signature</code> header. This is an HMAC-SHA256 hash of the response JSON string using the software's SDK API Key as the secret. Verify this signature in your client before unlocking application features.
+                </p>
+            </div>
+
+            <!-- Base URL -->
+            <div class="glass-panel p-6 rounded-2xl space-y-3">
+                <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider">Base Endpoint Address</h3>
+                <div class="flex items-center gap-3">
+                    <code class="flex-1 text-white font-mono bg-black/40 px-4 py-3 rounded-lg border border-white/5 text-sm" id="base-url-display">http://localhost:3000</code>
+                    <button onclick="navigator.clipboard.writeText(window.location.origin); alert('Copied Base URL')" class="p-3 bg-white/5 hover:bg-white/10 rounded-lg text-slate-300 transition-colors border border-white/5">
+                        📋
+                    </button>
+                </div>
+            </div>
+
+            <!-- Endpoints Specification -->
+            <div class="space-y-8">
+                <h2 class="text-2xl font-bold text-white border-b border-slate-800 pb-3">REST Endpoints</h2>
+
+                <!-- Validate -->
+                <div class="space-y-3">
+                    <div class="flex items-center gap-3">
+                        <span class="px-3 py-1 bg-blue-500/10 text-blue-400 border border-blue-500/20 font-bold rounded-lg text-xs font-mono">GET</span>
+                        <code class="text-white font-bold font-mono">/api/validate</code>
+                    </div>
+                    <p class="text-sm text-slate-400">Validate a license key and bound hardware fingerprint. Returns custom metadata configuration flags.</p>
+                    <div class="bg-black/30 rounded-xl border border-white/5 p-4 space-y-2">
+                        <h4 class="text-xs font-bold text-slate-400 uppercase">Query Parameters</h4>
+                        <ul class="text-xs space-y-2 text-slate-300">
+                            <li><code class="text-indigo-300 font-mono">license</code> <span class="text-red-400 font-semibold">(Required)</span>: The license key string.</li>
+                            <li><code class="text-indigo-300 font-mono">hwid</code> <span class="text-red-400 font-semibold">(Required if bound)</span>: Client device Hardware ID.</li>
+                            <li><code class="text-indigo-300 font-mono">software_id</code> <span class="text-slate-500">(Optional)</span>: The unique software identifier.</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Register -->
+                <div class="space-y-3">
+                    <div class="flex items-center gap-3">
+                        <span class="px-3 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold rounded-lg text-xs font-mono">POST</span>
+                        <code class="text-white font-bold font-mono">/api/register</code>
+                    </div>
+                    <p class="text-sm text-slate-400">Register a new client device and bind the hardware hardware fingerprint to a license key.</p>
+                    <div class="bg-black/30 rounded-xl border border-white/5 p-4 space-y-2">
+                        <h4 class="text-xs font-bold text-slate-400 uppercase">Request Body Parameters</h4>
+                        <ul class="text-xs space-y-2 text-slate-300">
+                            <li><code class="text-indigo-300 font-mono">license</code> <span class="text-red-400 font-semibold">(Required)</span>: License key string.</li>
+                            <li><code class="text-indigo-300 font-mono">hwid</code> <span class="text-red-400 font-semibold">(Required)</span>: Hardware fingerprint lock value.</li>
+                            <li><code class="text-indigo-300 font-mono">device_name</code> <span class="text-slate-500">(Optional)</span>: Client device name string.</li>
+                            <li><code class="text-indigo-300 font-mono">cpu_info</code> <span class="text-slate-500">(Optional)</span>: Client processor description.</li>
+                            <li><code class="text-indigo-300 font-mono">gpu_info</code> <span class="text-slate-500">(Optional)</span>: Client graphics hardware description.</li>
+                            <li><code class="text-indigo-300 font-mono">motherboard_uuid</code> <span class="text-slate-500">(Optional)</span>: Base motherboard UUID string.</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
         </main>
+
+        <!-- Loader Integration Hub (Language Code Tabs) -->
+        <aside class="lg:col-span-5 space-y-6">
+            <div class="glass-panel rounded-2xl overflow-hidden flex flex-col h-[650px] border border-white/5">
+                <div class="border-b border-white/5 bg-slate-900/30 flex justify-between items-center px-4">
+                    <span class="text-xs font-bold uppercase text-slate-400 tracking-wider">Client Integration Loaders</span>
+                </div>
+                
+                <!-- Language selection tabs -->
+                <div class="flex border-b border-white/5 bg-[#0a0f1d] text-xs">
+                    <button class="tab-btn active px-4 py-3 flex-1 text-center font-semibold transition-all" onclick="selectTab('csharp')">C#</button>
+                    <button class="tab-btn px-4 py-3 flex-1 text-center font-semibold transition-all" onclick="selectTab('cpp')">C++</button>
+                    <button class="tab-btn px-4 py-3 flex-1 text-center font-semibold transition-all" onclick="selectTab('python')">Python</button>
+                    <button class="tab-btn px-4 py-3 flex-1 text-center font-semibold transition-all" onclick="selectTab('nodejs')">Node.js</button>
+                </div>
+
+                <!-- Code blocks containers -->
+                <div class="flex-1 p-4 bg-[#050810] overflow-y-auto text-xs relative group">
+                    <button onclick="copyActiveCode()" class="absolute top-3 right-3 p-1.5 bg-slate-900 border border-white/5 hover:bg-slate-800 text-slate-400 rounded-md transition-colors">
+                        📋 Copy Code
+                    </button>
+
+                    <!-- C# Code -->
+                    <pre id="code-csharp" class="language-code text-slate-300 select-all"><code class="language-csharp">using System;
+using System.Net.Http;
+using System.Security.Cryptography;
+using System.Text;
+using System.Threading.Tasks;
+
+public class LicenseValidator
+{
+    private static readonly string API_KEY = "YOUR_SDK_API_KEY";
+    private static readonly string BASE_URL = "http://localhost:3000";
+
+    public static async Task&lt;bool&gt; ValidateLicense(string key, string hwid)
+    {
+        using (var client = new HttpClient())
+        {
+            var url = $"{BASE_URL}/api/validate?license={key}&hwid={hwid}";
+            client.DefaultRequestHeaders.Add("X-Software-API-Key", API_KEY);
+            
+            var response = await client.GetAsync(url);
+            var content = await response.Content.ReadAsStringAsync();
+            
+            if (!response.IsSuccessStatusCode) return false;
+
+            // Integrity verification
+            if (response.Headers.TryGetValues("X-Response-Signature", out var values))
+            {
+                var receivedSignature = string.Join("", values);
+                var computedSignature = HmacSha256(content, API_KEY);
+                return receivedSignature.Equals(computedSignature, StringComparison.OrdinalIgnoreCase);
+            }
+            
+            return false;
+        }
+    }
+
+    private static string HmacSha256(string message, string secret)
+    {
+        var encoding = new ASCIIEncoding();
+        byte[] keyByte = encoding.GetBytes(secret);
+        byte[] messageBytes = encoding.GetBytes(message);
+        using (var hmacsha256 = new HMACSHA256(keyByte))
+        {
+            byte[] hashmessage = hmacsha256.ComputeHash(messageBytes);
+            return BitConverter.ToString(hashmessage).Replace("-", "").ToLower();
+        }
+    }
+}</code></pre>
+
+                    <!-- C++ Code -->
+                    <pre id="code-cpp" class="language-code hidden text-slate-300"><code class="language-cpp">// Requires libcurl and openssl
+#include &lt;iostream&gt;
+#include &lt;string&gt;
+#include &lt;curl/curl.h&gt;
+#include &lt;openssl/hmac.h&gt;
+#include &lt;openssl/evp.h&gt;
+
+const std::string API_KEY = "YOUR_SDK_API_KEY";
+const std::string BASE_URL = "http://localhost:3000";
+
+std::string compute_hmac(const std::string& data, const std::string& key) {
+    unsigned char hash[EVP_MAX_MD_SIZE];
+    unsigned int hlen = 0;
+    HMAC(EVP_sha256(), key.c_str(), key.length(), 
+         (unsigned char*)data.c_str(), data.length(), hash, &hlen);
+    
+    char hex[65];
+    for (unsigned int i = 0; i &lt; hlen; ++i) {
+        sprintf(hex + i * 2, "%02x", hash[i]);
+    }
+    return std::string(hex, hlen * 2);
+}
+
+// Complete request loop details inside client loader...</code></pre>
+
+                    <!-- Python Code -->
+                    <pre id="code-python" class="language-code hidden text-slate-300"><code class="language-python">import requests
+import hmac
+import hashlib
+
+API_KEY = "YOUR_SDK_API_KEY"
+BASE_URL = "http://localhost:3000"
+
+def validate_license(license_key, hwid):
+    url = f"{BASE_URL}/api/validate"
+    headers = {"X-Software-API-Key": API_KEY}
+    params = {"license": license_key, "hwid": hwid}
+    
+    res = requests.get(url, headers=headers, params=params)
+    if res.status_code != 200:
+        return False, "Unauthorized/Expired"
+
+    # Integrity verification
+    signature = res.headers.get("X-Response-Signature")
+    if not signature:
+        return False, "Response not signed"
+        
+    computed = hmac.new(
+        API_KEY.encode(), 
+        res.text.encode(), 
+        hashlib.sha256
+    ).hexdigest()
+    
+    if not hmac.compare_digest(signature, computed):
+        return False, "Response tampered!"
+        
+    return True, res.json()</code></pre>
+
+                    <!-- Node.js Code -->
+                    <pre id="code-nodejs" class="language-code hidden text-slate-300"><code class="language-javascript">const crypto = require('crypto');
+
+const API_KEY = "YOUR_SDK_API_KEY";
+const BASE_URL = "http://localhost:3000";
+
+async function validateLicense(license, hwid) {
+    const url = \`\${BASE_URL}/api/validate?license=\${license}&hwid=\${hwid}\`;
+    
+    const res = await fetch(url, {
+        headers: { "X-Software-API-Key": API_KEY }
+    });
+    
+    const text = await res.text();
+    if (!res.ok) throw new Error("Invalid request");
+    
+    const signature = res.headers.get("X-Response-Signature");
+    const computed = crypto
+        .createHmac('sha256', API_KEY)
+        .update(text)
+        .digest('hex');
+        
+    if (signature !== computed) {
+        throw new Error("Response validation signature mismatch!");
+    }
+    
+    return JSON.parse(text);
+}</code></pre>
+                </div>
+            </div>
+        </aside>
     </div>
 
-    <!-- Interactivity Script -->
+    <!-- Footer -->
+    <footer class="py-8 border-t border-white/5 text-center text-xs text-slate-500">
+        <p>&copy; ${new Date().getFullYear()} Ultra License System. All rights reserved.</p>
+    </footer>
+
     <script>
-        // Set dynamic base URL
-        document.getElementById('base-url').textContent = window.location.origin;
+        document.getElementById('base-url-display').textContent = window.location.origin;
 
-        // Copy JSON buttons
-        document.querySelectorAll('.copy-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                const codeBlock = e.currentTarget.nextElementSibling;
-                navigator.clipboard.writeText(codeBlock.textContent);
-                
-                // Visual feedback
-                const originalSvg = e.currentTarget.innerHTML;
-                e.currentTarget.innerHTML = '<svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>';
-                setTimeout(() => {
-                    e.currentTarget.innerHTML = originalSvg;
-                }, 2000);
-            });
-        });
+        function selectTab(lang) {
+            // Remove active classes
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.language-code').forEach(pre => pre.classList.add('hidden'));
 
-        // Simple smooth scroll spy (highlight active link)
-        const sections = document.querySelectorAll('div[id^="api-"], div[id^="pc-"]');
-        const navLinks = document.querySelectorAll('aside a');
+            // Find current tab button
+            const event = window.event;
+            if(event) {
+                event.currentTarget.classList.add('active');
+            } else {
+                // Find by text matching if event is not passed
+                document.querySelectorAll('.tab-btn').forEach(btn => {
+                    if(btn.textContent.toLowerCase().includes(lang)) btn.classList.add('active');
+                });
+            }
 
-        window.addEventListener('scroll', () => {
-            let current = '';
-            sections.forEach(section => {
-                const sectionTop = section.offsetTop;
-                if (pageYOffset >= sectionTop - 100) {
-                    current = section.getAttribute('id');
-                }
-            });
+            // Show active pre
+            document.getElementById('code-' + lang).classList.remove('hidden');
+        }
 
-            navLinks.forEach(link => {
-                link.classList.remove('text-white', 'bg-slate-800');
-                if (link.getAttribute('href').substring(1) === current) {
-                    link.classList.add('text-white', 'bg-slate-800');
-                }
-            });
-        }, { passive: true });
+        function copyActiveCode() {
+            const activePre = document.querySelector('.language-code:not(.hidden)');
+            if(activePre) {
+                navigator.clipboard.writeText(activePre.textContent);
+                alert("Code snippet copied successfully!");
+            }
+        }
     </script>
 </body>
 </html>`;

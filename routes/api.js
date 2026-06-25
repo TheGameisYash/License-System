@@ -14,12 +14,18 @@ const softwareRoute = require('./api/software');
 // ✅ NEW: Users route
 const usersRoutes = require('./api/users');
 
+// Trial route
+const trialRoute = require('./api/trial');
+
 // ============================================================================
 // MOUNT ALL API ROUTES
 // ============================================================================
 
 // Device registration
 router.use('/register', registerRoute);
+
+// Trial activation
+router.use('/trial', trialRoute);
 
 // License validation
 router.use('/validate', validateRoute);
@@ -77,6 +83,19 @@ router.get('/', (req, res) => {
             cpu_info: 'string (optional) - CPU fingerprint',
             gpu_info: 'string (optional) - GPU fingerprint',
             motherboard_uuid: 'string (optional) - Motherboard UUID'
+          }
+        },
+        trial: {
+          method: 'POST',
+          path: '/api/trial',
+          description: 'Request a 24-hour trial period',
+          auth: 'X-Software-API-Key',
+          body: {
+            hwid: 'string (required) - Hardware ID (10-256 chars)',
+            user_id: 'string (optional) - User identifier',
+            device_name: 'string (optional) - Friendly device name',
+            device_info: 'string (optional) - Device details',
+            software_id: 'string (optional, default: "default") - Target software ID'
           }
         },
         validate: {
@@ -211,6 +230,7 @@ router.use('*', (req, res) => {
       method: req.method,
       availableEndpoints: [
         'POST /api/register',
+        'POST /api/trial',
         'GET  /api/validate',
         'GET  /api/license-info',
         'POST /api/request-hwid-reset',

@@ -338,6 +338,32 @@ async function deleteSoftwareUser(softwareId, username) {
   }
 }
 
+// ============================================================================
+// TRIAL OPERATIONS
+// ============================================================================
+
+async function getTrial(hwid) {
+  try {
+    const db = getDb();
+    const doc = await db.collection('trials').doc(hwid).get();
+    return doc.exists ? doc.data() : null;
+  } catch (error) {
+    console.error('getTrial error:', error);
+    return null;
+  }
+}
+
+async function saveTrial(hwid, data) {
+  try {
+    const db = getDb();
+    await db.collection('trials').doc(hwid).set(data, { merge: true });
+    return true;
+  } catch (error) {
+    console.error('saveTrial error:', error);
+    return false;
+  }
+}
+
 module.exports = {
   // Licenses
   getLicense, saveLicense, deleteLicense,
@@ -350,5 +376,7 @@ module.exports = {
   // Announcements
   getAnnouncements, getAllAnnouncementsAdmin, saveAnnouncement, updateAnnouncement, deleteAnnouncement,
   // Software Users
-  getSoftwareUser, getAllSoftwareUsers, saveSoftwareUser, deleteSoftwareUser
+  getSoftwareUser, getAllSoftwareUsers, saveSoftwareUser, deleteSoftwareUser,
+  // Trials
+  getTrial, saveTrial
 };

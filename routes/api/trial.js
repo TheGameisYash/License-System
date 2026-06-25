@@ -80,9 +80,22 @@ router.post('/',
       // ── Abuse Prevention: Check if trial was already redeemed for this HWID
       const existingTrial = await getTrial(hwid);
       if (existingTrial) {
-        return res.status(400).json({
-          success: false,
-          message: 'Trial already redeemed on this device.'
+        const remainingMs = new Date(existingTrial.expiry) - new Date();
+        if (remainingMs <= 0) {
+          return res.status(400).json({
+            success: false,
+            message: 'Trial already redeemed on this device.'
+          });
+        }
+
+        // Trial is still active! Return success payload
+        const remainingHours = Math.max(1, Math.ceil(remainingMs / (1000 * 60 * 60)));
+        return res.status(200).json({
+          success: true,
+          message: 'Trial activated successfully. Enjoy Stark Sec!',
+          status: 'Trial',
+          daysRemaining: 1,
+          expiry: `${remainingHours} Hours`
         });
       }
 

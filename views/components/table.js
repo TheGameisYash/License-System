@@ -129,6 +129,16 @@ function generateLicenseTable(licenses, allSoftware = []) {
                 </tbody>
             </table>
         </div>
+        <div class="pagination-controls" style="display: flex; justify-content: space-between; align-items: center; margin-top: 16px; padding: 12px 4px 0 4px; border-top: 1px solid rgba(255, 255, 255, 0.06); flex-wrap: wrap; gap: 12px;">
+            <div style="font-size: 13px; color: #8b8d94; font-weight: 500;">
+                Showing <span id="pagination-start" style="color: #cbd5e1; font-weight: 600;">0</span> to <span id="pagination-end" style="color: #cbd5e1; font-weight: 600;">0</span> of <span id="pagination-total" style="color: #cbd5e1; font-weight: 600;">0</span> entries
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center;">
+                <button id="btnPrevPage" class="btn" style="padding: 6px 12px; font-size: 12px; background: rgba(255, 255, 255, 0.05); color: #cbd5e1; border: 1px solid rgba(255,255,255,0.05); cursor: pointer;" onclick="changePage(-1)">← Previous</button>
+                <span id="pageIndicator" style="font-size: 13px; color: #e4e6eb; padding: 0 4px; font-weight: 600; min-width: 90px; text-align: center;">Page 1 of 1</span>
+                <button id="btnNextPage" class="btn" style="padding: 6px 12px; font-size: 12px; background: rgba(255, 255, 255, 0.05); color: #cbd5e1; border: 1px solid rgba(255,255,255,0.05); cursor: pointer;" onclick="changePage(1)">Next →</button>
+            </div>
+        </div>
     </div>
   `;
 }

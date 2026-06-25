@@ -5,7 +5,12 @@ function generateScripts() {
         // ============================================================================
         // FILTER TABLE FUNCTIONALITY
         // ============================================================================
-        function filterTable() {
+        let currentPage = 1;
+        const rowsPerPage = 10;
+
+        function filterTable(resetPage = true) {
+            if (resetPage) currentPage = 1;
+
             const input = document.getElementById('searchInput');
             const filter = input ? input.value.toUpperCase() : '';
             const softwareFilter = (document.getElementById('softwareFilter') || {}).value || '';
@@ -13,9 +18,9 @@ function generateScripts() {
             const table = document.getElementById('licenseTable');
             if (!table) return;
             const tr = table.getElementsByTagName('tr');
-            let visibleCount = 0;
-            const totalCount = tr.length - 1;
             
+            // Step 1: Find all matching rows
+            const matchingRows = [];
             for (let i = 1; i < tr.length; i++) {
                 const row = tr[i];
                 const td = row.getElementsByTagName('td');
@@ -37,17 +42,66 @@ function generateScripts() {
                     statusMatch = row.dataset.status === statusFilter;
                 }
                 
-                const show = textMatch && softwareMatch && statusMatch;
-                row.style.display = show ? '' : 'none';
-                if (show) visibleCount++;
+                if (textMatch && softwareMatch && statusMatch) {
+                    matchingRows.push(row);
+                }
+                row.style.display = 'none'; // Hide by default
             }
+
+            // Step 2: Paginate matching rows
+            const totalMatching = matchingRows.length;
+            const totalPages = Math.max(1, Math.ceil(totalMatching / rowsPerPage));
             
+            if (currentPage > totalPages) currentPage = totalPages;
+            if (currentPage < 1) currentPage = 1;
+
+            const startIndex = (currentPage - 1) * rowsPerPage;
+            const endIndex = Math.min(startIndex + rowsPerPage, totalMatching);
+
+            for (let k = startIndex; k < endIndex; k++) {
+                matchingRows[k].style.display = '';
+            }
+
+            // Step 3: Update pagination UI
+            const startIndicator = totalMatching === 0 ? 0 : startIndex + 1;
+            const endIndicator = endIndex;
+            
+            const startEl = document.getElementById('pagination-start');
+            const endEl = document.getElementById('pagination-end');
+            const totalEl = document.getElementById('pagination-total');
+            const pageInd = document.getElementById('pageIndicator');
+            const btnPrev = document.getElementById('btnPrevPage');
+            const btnNext = document.getElementById('btnNextPage');
+
+            if (startEl) startEl.innerText = startIndicator;
+            if (endEl) endEl.innerText = endIndicator;
+            if (totalEl) totalEl.innerText = totalMatching;
+            if (pageInd) pageInd.innerText = 'Page ' + currentPage + ' of ' + totalPages;
+
+            if (btnPrev) {
+                btnPrev.disabled = currentPage === 1;
+                btnPrev.style.opacity = currentPage === 1 ? '0.4' : '1';
+                btnPrev.style.pointerEvents = currentPage === 1 ? 'none' : 'auto';
+            }
+            if (btnNext) {
+                btnNext.disabled = currentPage === totalPages;
+                btnNext.style.opacity = currentPage === totalPages ? '0.4' : '1';
+                btnNext.style.pointerEvents = currentPage === totalPages ? 'none' : 'auto';
+            }
+
+            // Step 4: Update header title
             const header = document.getElementById('license-list-header');
             if (header) {
-                header.innerHTML = visibleCount < totalCount
-                    ? '📋 License List (' + visibleCount + ' of ' + totalCount + ' shown)'
+                const totalCount = tr.length - 1;
+                header.innerHTML = totalMatching < totalCount
+                    ? '📋 License List (' + totalMatching + ' of ' + totalCount + ' shown)'
                     : '📋 License List (' + totalCount + ')';
             }
+        }
+
+        function changePage(direction) {
+            currentPage += direction;
+            filterTable(false);
         }
 
         
@@ -389,6 +443,7 @@ function generateScripts() {
             
             addScrollToTop();
             setupSearchAutoSave();
+            filterTable(true);
             
             const hwidContainers = document.querySelectorAll('.hwid-container');
             hwidContainers.forEach(container => {

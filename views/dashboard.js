@@ -6,10 +6,11 @@ const { generateHeader } = require('./components/header');
 const { generateStats } = require('./components/stats');
 const { generateLicenseGenerationForm, generateSettingsForm, generateBanManagementForm } = require('./components/forms');
 const { generateLicenseTable } = require('./components/table');
+const { generateTrialTable } = require('./components/trialTable');
 const { generateModals } = require('./components/modals');
 const { generateScripts } = require('./components/scripts');
 
-function generateDashboard(licenses, settings, banlist, recentLogs, cache, pendingRequestsCount, allSoftware = []) {
+function generateDashboard(licenses, settings, banlist, recentLogs, cache, pendingRequestsCount, allSoftware = [], trials = []) {
   const totalLicenses = Object.keys(licenses).length;
   const activeLicenses = Object.values(licenses).filter(l => l.hwid && !isLicenseExpired(l) && !l.banned).length;
   const inactiveLicenses = Object.values(licenses).filter(l => !l.hwid).length;
@@ -64,6 +65,7 @@ function generateDashboard(licenses, settings, banlist, recentLogs, cache, pendi
         ${generateSettingsForm(settings)}
         ${generateBanManagementForm(banlist)}
         ${generateLicenseTable(licenses, allSoftware)}
+        ${generateTrialTable(trials, allSoftware)}
 
         <!-- Recent Activity -->
         ${recentLogs.length > 0 ? `

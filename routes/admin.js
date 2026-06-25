@@ -53,15 +53,20 @@ function slugify(str) {
 router.get('/', async (req, res) => {
   try {
     const db = getDb();
-    const [licensesSnapshot, settings, banlist, allSoftware] = await Promise.all([
+    const [licensesSnapshot, settings, banlist, allSoftware, trialsSnapshot] = await Promise.all([
       db.collection('licenses').get(),
       getSettings(),
       getBanlist(),
-      getAllSoftware()
+      getAllSoftware(),
+      db.collection('trials').get()
     ]);
 
     const licenses = {};
     licensesSnapshot.forEach(doc => { licenses[doc.id] = doc.data(); });
+
+    const trials = [];
+    trialsSnapshot.forEach(doc => { trials.push({ id: doc.id, ...doc.data() }); });
+    trials.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
 
     const recentLogsSnapshot = await db.collection('activity_log')
       .limit(50).get();
@@ -74,7 +79,7 @@ router.get('/', async (req, res) => {
       .where('status', '==', 'pending').get();
     const pendingRequestsCount = pendingRequestsSnapshot.size;
 
-    res.send(generateDashboard(licenses, settings, banlist, recentLogs, cache, pendingRequestsCount, allSoftware));
+    res.send(generateDashboard(licenses, settings, banlist, recentLogs, cache, pendingRequestsCount, allSoftware, trials));
   } catch (error) {
     console.error('Dashboard error:', error);
     res.status(500).send('Error loading dashboard');
@@ -745,6 +750,26 @@ router.post('/announcements/:softwareId/:id/delete', async (req, res) => {
   } catch (error) {
     console.error('Delete announcement error:', error);
     res.send('<script>alert("Error!");history.back();</script>');
+  }
+});
+
+// ============================================================================
+// TRIAL RESET / DELETION
+// ============================================================================
+
+router.post('/delete-trial', async (req, res) => {
+  try {
+    const { hwid } = req.body;
+    if (!hwid) return res.redirect('/admin');
+    
+    const db = getDb();
+    await db.collection('trials').doc(hwid).delete();
+    
+    await logActivityBatched('TRIAL_DELETED', `HWID: ${hwid}`, req.ip, req.get('User-Agent'));
+    res.redirect('/admin');
+  } catch (error) {
+    console.error('Delete trial error:', error);
+    res.send('<script>alert("Error!");window.location="/admin";</script>');
   }
 });
 
